@@ -10,7 +10,13 @@ private struct SavedIndex: Codable {
 
 struct ClipItem: Codable {
     enum Kind: String, Codable {
-        case text, image
+        /// Plain text, with its formatted versions if any.
+        case text
+        /// An image, saved as PNG.
+        case image
+        /// Anything else apps put on the pasteboard, such as a slide copied
+        /// in Google Slides: every format, saved as is.
+        case rich
     }
 
     let id: UUID
@@ -20,6 +26,8 @@ struct ClipItem: Codable {
     /// `HistoryStore.storedTextLength` characters: enough for the menu title
     /// and tooltip. The full text is in the item's saved
     /// `public.utf8-plain-text` data (see `HistoryStore.fullText(of:)`).
+    /// For a rich item, the visible text of its HTML, or the name of the
+    /// app it was copied in.
     let text: String?
     /// Used to spot repeated copies.
     let digest: String

@@ -17,6 +17,10 @@ you paste it with ⌘V as usual.
   Docs, Chrome and Slack, ⌥⇧⌘V in most Mac apps) still works. Hold **⇧** while
   picking an entry to copy it as plain text only.
 - **Images** are shown as thumbnails (50×50 by default).
+- **Other content**, such as a slide or a shape copied in Google Slides,
+  is kept with all its formats, so pasting it puts back the slide, not just
+  its text. These entries are marked with a ⧉ icon and titled with their
+  text, or with the app they were copied in.
 - Copying something that is already in the history moves it to the top.
 - Passwords copied from password managers (anything marked *concealed*, see
   [nspasteboard.org](http://nspasteboard.org)) are never saved.

@@ -27,11 +27,19 @@ final class ClipboardWatcher {
         "de.petermaurer.TransientPasteboardType",
     ]
 
-    /// Formats kept for text, so ⌘V can paste with formatting.
-    private static let textTypes: [NSPasteboard.PasteboardType] = [.rtf, .rtfd, .html]
+    /// Formats kept for text, so ⌘V can paste with formatting. Chrome keeps
+    /// a web page's own clipboard formats in `org.chromium.web-custom-data`;
+    /// keeping it lets a copy from Google Docs or Slides paste back there
+    /// as what it was, not as plain text.
+    private static let textTypes: [NSPasteboard.PasteboardType] = [
+        .rtf, .rtfd, .html, chromiumCustomData,
+    ]
+    private static let chromiumCustomData = NSPasteboard.PasteboardType("org.chromium.web-custom-data")
 
     /// Largest single pasteboard representation that is saved, in bytes.
     private static let maxDataSize = 32 * 1024 * 1024
+    /// Largest total size of a rich copy's representations, in bytes.
+    private static let maxRichSize = 64 * 1024 * 1024
     /// Largest image that is decoded, in pixels (100 megapixels).
     private static let maxImagePixels = 100_000_000
 
@@ -111,13 +119,13 @@ final class ClipboardWatcher {
         // Files copied in Finder are not supported.
         if types.contains(.fileURL) { return }
 
-        if let text = pasteboard.string(forType: .string) {
-            // Check the size first: it's cheap, isBlank may scan the whole text.
+        if let text = pasteboard.string(forType: .string),
+           // Check the size first: it's cheap, isBlank may scan the whole text.
+           text.utf8.count > Self.maxDataSize || !Preview.isBlank(text) {
             guard text.utf8.count <= Self.maxDataSize else {
                 log.warning("Skipped a copy of \(text.utf8.count, privacy: .public) bytes of text; the limit is \(Self.maxDataSize, privacy: .public)")
                 return
             }
-            guard !Preview.isBlank(text) else { return }
             let plain = Data(text.utf8)
             var representations: [(String, Data)] = [(NSPasteboard.PasteboardType.string.rawValue, plain)]
             for type in Self.textTypes where types.contains(type) {
@@ -131,7 +139,68 @@ final class ClipboardWatcher {
             store.add(kind: .image, text: nil, digest: digest(image.png),
                       representations: [(NSPasteboard.PasteboardType.png.rawValue, image.png)],
                       pixelWidth: image.width, pixelHeight: image.height)
+        } else if let rich = richCopy(types: types) {
+            let title = rich.text.isEmpty ? Self.appName(of: sources.first) : rich.text
+            store.add(kind: .rich, text: title, digest: rich.digest, representations: rich.representations)
         }
+    }
+
+    /// A copy with no visible plain text and no image, such as a slide or
+    /// a drawing copied in Google Slides: Chrome puts only HTML and the
+    /// page's own formats (`org.chromium.web-custom-data`) on the
+    /// pasteboard. Every format is kept as is so ⌘V pastes the same thing
+    /// back. `text` is the visible text of the HTML, if any.
+    private func richCopy(types: [NSPasteboard.PasteboardType]) -> (text: String, digest: String, representations: [(String, Data)])? {
+        var representations: [(String, Data)] = []
+        var total = 0
+        var hasher = SHA256()
+        for type in types where Self.isSavable(type) {
+            guard let data = pasteboard.data(forType: type), !data.isEmpty else { continue }
+            guard data.count <= Self.maxDataSize else {
+                log.warning("Skipped \(type.rawValue, privacy: .public) data of \(data.count, privacy: .public) bytes; the limit is \(Self.maxDataSize, privacy: .public)")
+                continue
+            }
+            total += data.count
+            guard total <= Self.maxRichSize else {
+                log.warning("Skipped a copy of more than \(Self.maxRichSize, privacy: .public) bytes")
+                return nil
+            }
+            representations.append((type.rawValue, data))
+            hasher.update(data: Data(type.rawValue.utf8))
+            hasher.update(data: data)
+        }
+        // Plain text alone that is blank, or a lone source marker, is
+        // nothing worth keeping.
+        let meaningful = representations.contains {
+            $0.0 != NSPasteboard.PasteboardType.string.rawValue && $0.0 != "org.nspasteboard.source"
+                && !$0.0.hasPrefix("org.chromium.source-")
+        }
+        guard meaningful else { return nil }
+
+        var text = ""
+        if let html = representations.first(where: { $0.0 == NSPasteboard.PasteboardType.html.rawValue })?.1 {
+            text = Preview.htmlText(String(decoding: html, as: UTF8.self), maxLength: HistoryStore.storedTextLength)
+        }
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return (text: text, digest: digest, representations: representations)
+    }
+
+    /// Whether a pasteboard type is worth saving in a rich copy. Old-style
+    /// names ("NeXT Rich Text Format v1.0 pasteboard type") and `dyn.`
+    /// types are aliases macOS adds for the UTIs already on the pasteboard;
+    /// saving them would only store the same data twice.
+    private static func isSavable(_ type: NSPasteboard.PasteboardType) -> Bool {
+        let name = type.rawValue
+        return !name.hasPrefix("dyn.") && !name.contains(" ") && name.contains(".")
+    }
+
+    /// Menu title for a rich copy with no text: the name of the app it
+    /// came from.
+    private static func appName(of bundleID: String?) -> String {
+        let name = bundleID.flatMap { id in
+            NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.localizedName
+        }
+        return name.map { "Copied in \($0)" } ?? "Copied content"
     }
 
     /// Image on the pasteboard as PNG data, plus its pixel size.

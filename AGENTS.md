@@ -76,7 +76,13 @@ The app target is not unit tested.
   default 0.5 s). After CopyBar writes to the pasteboard itself, call
   `watcher.skipCurrentContents()`, then `store.moveToTop(id)`.
 - **What gets captured.** Text: the plain string plus `.rtf`, `.rtfd`,
-  `.html` when present, so ⌘V keeps formatting. ⇧-clicking a menu entry
+  `.html` and Chrome's `org.chromium.web-custom-data` (a web page's own
+  formats, e.g. Google Docs/Slides) when present, so ⌘V keeps formatting.
+  A copy with no visible plain text and no image (a Google Slides slide
+  is HTML plus web custom data) becomes a `.rich` item: every UTI-named
+  type is saved as is (each ≤ 32 MB, 64 MB in total; `dyn.` and old-style
+  alias names are skipped), titled by `Preview.htmlText` of its HTML or
+  by the source app's name. ⇧-clicking a menu entry
   writes plain text only. Images: stored as PNG; picking one writes PNG
   and TIFF. File URLs (Finder copies) are skipped on purpose.
   Representations over 32 MB are not saved (a copy whose plain text or

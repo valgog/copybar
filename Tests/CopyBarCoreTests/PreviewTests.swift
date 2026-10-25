@@ -10,6 +10,31 @@ final class PreviewTests: XCTestCase {
         XCTAssertEqual(Preview.visiblePrefix(" \u{200B}\n", maxLength: 100), "")
     }
 
+    func testHTMLTextDropsMarkup() {
+        let html = """
+            <meta charset="utf-8"><style>p { color: red; }</style><!-- note -->
+            <b id="docs-internal-guid-1">Quarterly</b> <i>plan</i><p>Fish &amp; chips&nbsp;&#8212;&#x41;</p>
+            <script>if (a < b) { x = "</p>" }</script><div>end</div>
+            """
+        XCTAssertEqual(Preview.htmlText(html, maxLength: 100), "Quarterly plan Fish & chips —A end")
+    }
+
+    func testHTMLTextSeparatesBlocksButNotInlineElements() {
+        XCTAssertEqual(Preview.htmlText("<p>one</p><p>two<br/>three</p>", maxLength: 100), "one two three")
+        XCTAssertEqual(Preview.htmlText("<b>He</b>llo", maxLength: 100), "Hello")
+    }
+
+    func testHTMLTextWithNoVisibleText() {
+        XCTAssertEqual(Preview.htmlText("<meta charset='utf-8'><b id=\"x\"></b>", maxLength: 100), "")
+        XCTAssertEqual(Preview.htmlText("<div>unclosed <span", maxLength: 100), "unclosed")
+        XCTAssertEqual(Preview.htmlText("Tom &unknown; &#xZZ;", maxLength: 100), "Tom &unknown; &#xZZ;")
+    }
+
+    func testHTMLTextStopsAtMaxLength() {
+        let html = "<p>" + String(repeating: "word ", count: 100_000) + "</p>"
+        XCTAssertEqual(Preview.htmlText(html, maxLength: 9), "word word")
+    }
+
     func testShortTextIsUnchanged() {
         XCTAssertEqual(Preview.line("hello", maxLength: 30), "hello")
     }
