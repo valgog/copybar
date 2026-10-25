@@ -9,6 +9,11 @@ final class ClipboardWatcher {
     private let store: HistoryStore
     private var lastChangeCount: Int
     private var timer: Timer?
+    private var activationObserver: NSObjectProtocol?
+    /// Bundle id of the app that was frontmost at the last poll or app
+    /// switch. A copy found right after a switch belongs to this app, not
+    /// to the one that just became active.
+    private var lastFrontmostBundleID: String?
     var settings: Settings
 
     /// Markers that password managers and similar apps put on secret or
@@ -33,11 +38,46 @@ final class ClipboardWatcher {
     func start() {
         timer?.invalidate()
         let timer = Timer(timeInterval: settings.pollInterval, repeats: true) { [weak self] _ in
-            self?.poll()
+            self?.pollOnTimer()
         }
         timer.tolerance = settings.pollInterval / 5
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+
+        // start() runs again when poll_interval changes; observe only once.
+        if activationObserver == nil {
+            lastFrontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] notification in
+                self?.appDidActivate(notification)
+            }
+        }
+    }
+
+    deinit {
+        timer?.invalidate()
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+        }
+    }
+
+    private func pollOnTimer() {
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        // Prefer the app seen at the last switch: if frontmostApplication
+        // already changed but the activation notification is still queued,
+        // a pending copy was made in the previous app.
+        poll(fallbackSource: lastFrontmostBundleID ?? frontmost)
+        lastFrontmostBundleID = frontmost
+    }
+
+    /// Polls right away on an app switch, so a copy followed by a quick ⌘Tab
+    /// is attributed to the app it was made in (and `ignored_apps` holds).
+    private func appDidActivate(_ notification: Notification) {
+        poll(fallbackSource: lastFrontmostBundleID)
+        let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        lastFrontmostBundleID = app?.bundleIdentifier
+            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     }
 
     /// Call after CopyBar writes to the pasteboard itself.
@@ -45,7 +85,9 @@ final class ClipboardWatcher {
         lastChangeCount = pasteboard.changeCount
     }
 
-    private func poll() {
+    /// `fallbackSource` is the bundle id of the app the copy is attributed
+    /// to when the copying app doesn't set `org.nspasteboard.source`.
+    private func poll(fallbackSource: String?) {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }
         lastChangeCount = changeCount
@@ -55,8 +97,8 @@ final class ClipboardWatcher {
             return
         }
         let source = pasteboard.string(forType: NSPasteboard.PasteboardType("org.nspasteboard.source"))
-            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        if let source, settings.ignoredApps.contains(source) { return }
+            ?? fallbackSource
+        if let source, settings.isIgnoredApp(source) { return }
 
         // Files copied in Finder are not supported.
         if types.contains(.fileURL) { return }

@@ -80,8 +80,12 @@ The app target is not unit tested.
   writes plain text only. Images: stored as PNG; picking one writes PNG
   and TIFF. File URLs (Finder copies) are skipped on purpose. Copies with
   nspasteboard.org concealed/transient markers are skipped when
-  `ignore_concealed` is on, and so are apps in `ignored_apps`, matched by
-  `org.nspasteboard.source` or the frontmost app's bundle id.
+  `ignore_concealed` is on, and so are apps in `ignored_apps`, matched
+  case-insensitively by `org.nspasteboard.source` or the frontmost app's
+  bundle id. On `NSWorkspace.didActivateApplicationNotification` the
+  watcher polls at once and attributes the copy to the app that was
+  frontmost *before* the switch, so copy-then-⌘Tab in an ignored app is
+  still skipped.
 - **Dedup** is by SHA-256 of the plain text (text) or PNG data (images). A
   repeated copy replaces the old entry and moves to the top.
 - **Persistence.** `~/Library/Application Support/CopyBar/index.json` is

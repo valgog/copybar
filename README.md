@@ -60,7 +60,7 @@ image_size = 50         # thumbnail size in points (16-512)
 hotkey = cmd+alt+v      # modifiers: cmd, alt, ctrl, shift; `none` to turn off
 launch_at_login = true
 ignore_concealed = true # skip copies that password managers mark as secret
-ignored_apps =          # comma-separated bundle IDs never to record
+ignored_apps =          # comma-separated bundle IDs never to record (any case)
 poll_interval = 0.5     # seconds between clipboard checks (0.1-10)
 ```
 
