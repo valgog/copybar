@@ -92,9 +92,13 @@ The app target is not unit tested.
   still skipped.
 - **Dedup** is by SHA-256 of the plain text (text) or PNG data (images). A
   repeated copy replaces the old entry and moves to the top.
-- **Persistence.** `~/Library/Application Support/CopyBar/index.json` is
-  an array of `ClipItem` (Codable). Each item's data is in
-  `items/<uuid>/<n>.bin`, where `n` indexes `types`. Data is read from disk
+- **Persistence.** `~/Library/Application Support/CopyBar/index.json`
+  holds a format `version` and the `items`, an array of `ClipItem`
+  (Codable). If the index can't be decoded or its version isn't
+  `HistoryStore.formatVersion`, the whole history is deleted on start, so
+  bump that number whenever a change makes saved history unreadable.
+  Each item's data is in `items/<uuid>/<n>.bin`, where `n` indexes
+  `types`. Data is read from disk
   only when an item is picked. `ClipItem.text` holds only the first 1000
   characters (menu title and tooltip); ⇧-picking reads the full text from
   the saved `public.utf8-plain-text` data (`HistoryStore.fullText(of:)`).

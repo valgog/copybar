@@ -1,6 +1,12 @@
 import AppKit
 import ImageIO
 
+/// The contents of `index.json`.
+private struct SavedIndex: Codable {
+    let version: Int
+    let items: [ClipItem]
+}
+
 struct ClipItem: Codable {
     enum Kind: String, Codable {
         case text, image
@@ -39,6 +45,9 @@ final class HistoryStore {
 
     private let directory: URL
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
+    /// Bump when `ClipItem` or the item files change in a way older history
+    /// can't be read with. History in any other format is deleted on start.
+    private static let formatVersion = 1
     private static let directoryPermissions = 0o700
     private static let filePermissions = 0o600
     private var thumbnails: [UUID: NSImage] = [:]
@@ -173,18 +182,26 @@ final class HistoryStore {
         directory.appendingPathComponent("items", isDirectory: true).appendingPathComponent(id.uuidString)
     }
 
+    /// Loads the index, or deletes the whole history when the index is
+    /// missing, unreadable or from another format version.
     private func load() {
-        guard let data = try? Data(contentsOf: indexURL),
-              let saved = try? JSONDecoder().decode([ClipItem].self, from: data) else { return }
         let fm = FileManager.default
-        items = saved.filter { fm.fileExists(atPath: folder(for: $0.id).path) }
-        trim()
+        if let data = try? Data(contentsOf: indexURL),
+           let index = try? JSONDecoder().decode(SavedIndex.self, from: data),
+           index.version == Self.formatVersion {
+            items = index.items.filter { fm.fileExists(atPath: folder(for: $0.id).path) }
+            trim()
+        } else if fm.fileExists(atPath: indexURL.path) {
+            log.warning("Deleting clipboard history saved in an incompatible format")
+            try? fm.removeItem(at: indexURL)
+        }
+        // With no index loaded this deletes every item folder.
         removeOrphans()
     }
 
     private func save() {
         do {
-            let data = try JSONEncoder().encode(items)
+            let data = try JSONEncoder().encode(SavedIndex(version: Self.formatVersion, items: items))
             try write(data, to: indexURL, options: .atomic)
         } catch {
             log.error("Could not save history: \(error.localizedDescription, privacy: .public)")
