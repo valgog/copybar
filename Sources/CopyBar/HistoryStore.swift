@@ -13,8 +13,7 @@ struct ClipItem: Codable {
     /// `HistoryStore.storedTextLength` characters: enough for the menu title
     /// and tooltip. The full text is in the item's saved
     /// `public.utf8-plain-text` data (see `HistoryStore.fullText(of:)`).
-    /// Older versions stored the full text here; it is cut on load.
-    var text: String?
+    let text: String?
     /// Used to spot repeated copies.
     let digest: String
     /// Pasteboard types saved for this item, in the order they were copied.
@@ -52,8 +51,8 @@ final class HistoryStore {
         let fm = FileManager.default
         try? fm.createDirectory(at: directory, withIntermediateDirectories: true,
                                 attributes: [.posixPermissions: Self.directoryPermissions])
-        // Older versions created the folder with default permissions. Locking
-        // it down is enough: what's inside is then out of reach for others.
+        // The folder may already exist with looser permissions. Locking it
+        // down is enough: what's inside is then out of reach for others.
         do {
             try fm.setAttributes([.posixPermissions: Self.directoryPermissions], ofItemAtPath: directory.path)
         } catch {
@@ -179,17 +178,8 @@ final class HistoryStore {
               let saved = try? JSONDecoder().decode([ClipItem].self, from: data) else { return }
         let fm = FileManager.default
         items = saved.filter { fm.fileExists(atPath: folder(for: $0.id).path) }
-        // Cut full texts that older versions stored in the index.
-        var shortenedAny = false
-        for index in items.indices {
-            if let text = items[index].text, text.count > Self.storedTextLength {
-                items[index].text = Self.shortened(text)
-                shortenedAny = true
-            }
-        }
         trim()
         removeOrphans()
-        if shortenedAny { save() }
     }
 
     private func save() {
