@@ -15,8 +15,6 @@ SIGN_IDENTITY ?= -
 SHELL      := /bin/bash
 HIDE_XCTEST_WARNING := sed -e '/could not determine XCTest paths/d' -e "/unable to lookup item 'PlatformPath'/d"
 
-INSTALLED  := $(PREFIX)/$(APP).app/Contents/MacOS/$(APP)
-
 # An empty PREFIX would make install/uninstall work on /CopyBar.app.
 ifneq ($(filter install uninstall,$(MAKECMDGOALS)),)
 ifeq ($(strip $(PREFIX)),)
@@ -24,25 +22,10 @@ $(error PREFIX is empty; set it to the folder for $(APP).app, e.g. PREFIX=/Appli
 endif
 endif
 
-# Lets the installed copy remove its own login item. Older builds don't know
-# the flag (they would just start), so only call it if the binary has it.
-# The flag exits with 1 if the item is still there. Then it is retried as a
-# normal app launch through `open`, in case ServiceManagement doesn't accept
-# a copy started from the terminal, and checked once more.
-# macOS keys login items to the signature, so no other build can remove an
-# entry the installed copy can't; say where to remove it by hand.
+# Lets the installed copy remove its own login item; see the script.
 LOGIN_ITEMS_HINT := remove it by hand in System Settings > General > Login Items.
 define unregister_login_item
-@if [ -x "$(INSTALLED)" ]; then \
-		if grep -qa -- --unregister-login-item "$(INSTALLED)"; then \
-			"$(INSTALLED)" --unregister-login-item 2>/dev/null \
-				|| { open -W -n -g "$(PREFIX)/$(APP).app" --args --unregister-login-item; \
-					"$(INSTALLED)" --unregister-login-item; } \
-				|| echo "Could not remove the $(APP) login item; $(LOGIN_ITEMS_HINT)"; \
-		else \
-			echo "The installed $(APP) is too old to remove its own login item; $(LOGIN_ITEMS_HINT)"; \
-		fi; \
-	fi
+@"$(CURDIR)/Support/unregister-login-item.sh" "$(PREFIX)/$(APP).app"
 endef
 
 .PHONY: all app install uninstall test run clean

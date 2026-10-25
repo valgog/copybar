@@ -22,18 +22,6 @@ jobs:
           archs=$(lipo -archs .build/CopyBar.app/Contents/MacOS/CopyBar)
           echo "$archs"
           [[ "$archs" == *arm64* && "$archs" == *x86_64* ]]
-      - name: Diagnose login item flag detection
-        run: |
-          set +e
-          bin=.build/CopyBar.app/Contents/MacOS/CopyBar
-          grep --version || true
-          locale
-          grep -qa -- --unregister-login-item "$bin"; echo "plain grep: $?"
-          LC_ALL=C grep -qa -- --unregister-login-item "$bin"; echo "C grep: $?"
-          LC_ALL=C grep -qaF -- --unregister-login-item "$bin"; echo "C grep -F: $?"
-          strings -a "$bin" | grep -n -- unregister || echo "strings: no match"
-          strings -a "$bin" | grep -n -- 'login-item' || true
-          "$bin" --unregister-login-item; echo "flag exit: $?"
       - name: Package
         run: ditto -c -k --keepParent .build/CopyBar.app CopyBar.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
