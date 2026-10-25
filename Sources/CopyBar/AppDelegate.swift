@@ -125,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         switch item.kind {
         case .text where plainOnly:
-            pasteboard.setString(item.text ?? "", forType: .string)
+            pasteboard.setString(store.fullText(of: item) ?? "", forType: .string)
         case .text:
             for (type, data) in store.representations(of: item) {
                 pasteboard.setData(data, forType: NSPasteboard.PasteboardType(type))

@@ -95,8 +95,11 @@ The app target is not unit tested.
 - **Persistence.** `~/Library/Application Support/CopyBar/index.json` is
   an array of `ClipItem` (Codable). Each item's data is in
   `items/<uuid>/<n>.bin`, where `n` indexes `types`. Data is read from disk
-  only when an item is picked. **Any new `ClipItem` field must be optional**
-  so existing history still decodes. Orphan folders are deleted on load.
+  only when an item is picked. `ClipItem.text` holds only the first 1000
+  characters (menu title and tooltip); ⇧-picking reads the full text from
+  the saved `public.utf8-plain-text` data (`HistoryStore.fullText(of:)`).
+  Full texts in an older index are cut on load. **Any new `ClipItem`
+  field must be optional** so existing history still decodes. Orphan folders are deleted on load.
   The history can hold secrets: folders are created 0700 and files 0600,
   and the `CopyBar` folder is chmodded to 0700 on every start.
 - **Never activate the app before showing the menu.** `NSApp.activate`

@@ -9,8 +9,12 @@ struct ClipItem: Codable {
     let id: UUID
     var date: Date
     let kind: Kind
-    /// Plain text of a text item.
-    let text: String?
+    /// The start of a text item's plain text, at most
+    /// `HistoryStore.storedTextLength` characters: enough for the menu title
+    /// and tooltip. The full text is in the item's saved
+    /// `public.utf8-plain-text` data (see `HistoryStore.fullText(of:)`).
+    /// Older versions stored the full text here; it is cut on load.
+    var text: String?
     /// Used to spot repeated copies.
     let digest: String
     /// Pasteboard types saved for this item, in the order they were copied.
@@ -21,10 +25,14 @@ struct ClipItem: Codable {
 
 /// Keeps the clipboard history in memory and mirrors it to
 /// `~/Library/Application Support/CopyBar`. Item data lives on disk and is
-/// only read when an item is picked, so large images don't stay in memory.
-/// The history can hold passwords and other secrets, so the folders are
-/// created 0700 and the files 0600.
+/// only read when an item is picked, so large images and long texts don't
+/// stay in memory or in `index.json`. The history can hold passwords and
+/// other secrets, so the folders are created 0700 and the files 0600.
 final class HistoryStore {
+    /// Characters of plain text kept in the index: covers the longest menu
+    /// title (500) and the tooltip (1000).
+    static let storedTextLength = 1000
+
     private(set) var items: [ClipItem] = []
     var maxItems: Int {
         didSet { if maxItems != oldValue { trim(); save() } }
@@ -58,7 +66,8 @@ final class HistoryStore {
     /// but only once the new one is saved, so a failed write loses nothing.
     func add(kind: ClipItem.Kind, text: String?, digest: String, representations: [(String, Data)],
              pixelWidth: Int? = nil, pixelHeight: Int? = nil) {
-        let item = ClipItem(id: UUID(), date: Date(), kind: kind, text: text, digest: digest,
+        let item = ClipItem(id: UUID(), date: Date(), kind: kind, text: text.map(Self.shortened),
+                            digest: digest,
                             types: representations.map { $0.0 }, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
         let itemDir = folder(for: item.id)
         do {
@@ -110,6 +119,15 @@ final class HistoryStore {
         }
     }
 
+    /// The full plain text of a text item, read from its saved
+    /// `public.utf8-plain-text` data. Falls back to the stored start.
+    func fullText(of item: ClipItem) -> String? {
+        guard let index = item.types.firstIndex(of: NSPasteboard.PasteboardType.string.rawValue),
+              let data = try? Data(contentsOf: folder(for: item.id).appendingPathComponent("\(index).bin")),
+              let text = String(data: data, encoding: .utf8) else { return item.text }
+        return text
+    }
+
     /// A thumbnail that fits in a `size`×`size` point box, cached per item.
     func thumbnail(of item: ClipItem, size: Int) -> NSImage? {
         if size != thumbnailSize {
@@ -142,6 +160,10 @@ final class HistoryStore {
         try? FileManager.default.removeItem(at: folder(for: id))
     }
 
+    private static func shortened(_ text: String) -> String {
+        String(text.prefix(storedTextLength))
+    }
+
     private func trim() {
         while items.count > maxItems, let last = items.last {
             remove(last.id)
@@ -157,8 +179,17 @@ final class HistoryStore {
               let saved = try? JSONDecoder().decode([ClipItem].self, from: data) else { return }
         let fm = FileManager.default
         items = saved.filter { fm.fileExists(atPath: folder(for: $0.id).path) }
+        // Cut full texts that older versions stored in the index.
+        var shortenedAny = false
+        for index in items.indices {
+            if let text = items[index].text, text.count > Self.storedTextLength {
+                items[index].text = Self.shortened(text)
+                shortenedAny = true
+            }
+        }
         trim()
         removeOrphans()
+        if shortenedAny { save() }
     }
 
     private func save() {
