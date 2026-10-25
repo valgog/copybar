@@ -147,6 +147,10 @@ Lines starting with `#` or `;` are comments, and lists are comma-separated.
 It is created on first run from `Settings.defaultFileContents` (folder
 0700 and file 0600 when CopyBar creates them) and
 reloaded when its modification date changes, checked every 2 s.
+A symlinked config (dotfiles repos) is read through the link, but only if
+the target is a regular file of at most 64 KB; otherwise CopyBar warns and
+uses the defaults. An existing symlink, even a dangling one, is never
+replaced or written through when creating the default file.
 `AppDelegate.applySettings()` applies changes live.
 
 To add a setting, update all of these together:
