@@ -157,23 +157,38 @@ final class HistoryStore {
             thumbnailSize = size
         }
         if let cached = thumbnails[item.id] { return cached }
-        guard item.kind == .image else { return nil }
+        guard item.kind == .image,
+              let image = Self.image(at: imageURL(of: item), fitting: NSSize(width: size, height: size)) else { return nil }
+        thumbnails[item.id] = image
+        return image
+    }
 
-        let url = folder(for: item.id).appendingPathComponent("0.bin")
+    /// An image item scaled down to fit `size` points, for the hover
+    /// preview. Not cached: it is only made for the highlighted entry.
+    func image(of item: ClipItem, fitting size: NSSize) -> NSImage? {
+        guard item.kind == .image else { return nil }
+        return Self.image(at: imageURL(of: item), fitting: size)
+    }
+
+    private func imageURL(of item: ClipItem) -> URL {
+        folder(for: item.id).appendingPathComponent("0.bin")
+    }
+
+    /// Decodes the image at `url` already scaled down, so a huge image
+    /// never has to be decoded at full size.
+    private static func image(at url: URL, fitting box: NSSize) -> NSImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: size * 2, // sharp on Retina screens
+            kCGImageSourceThumbnailMaxPixelSize: Int(max(box.width, box.height)) * 2, // sharp on Retina screens
         ]
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
 
         let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
         // Fit the box, but never blow up a tiny image past one point per pixel.
-        let scale = min(CGFloat(size) / max(width, height), 1)
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: width * scale, height: height * scale))
-        thumbnails[item.id] = image
-        return image
+        let scale = min(box.width / width, box.height / height, 1)
+        return NSImage(cgImage: cgImage, size: NSSize(width: width * scale, height: height * scale))
     }
 
     private func remove(_ id: UUID) {

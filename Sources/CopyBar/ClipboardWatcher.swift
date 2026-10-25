@@ -135,7 +135,9 @@ final class ClipboardWatcher {
                 }
             }
             store.add(kind: .text, text: text, digest: digest(plain), representations: representations)
-        } else if let image = imagePNG(types: types) {
+        } else if types.contains(.png) || types.contains(.tiff) {
+            // An image that is too big is skipped, not saved as other content.
+            guard let image = imagePNG(types: types) else { return }
             store.add(kind: .image, text: nil, digest: digest(image.png),
                       representations: [(NSPasteboard.PasteboardType.png.rawValue, image.png)],
                       pixelWidth: image.width, pixelHeight: image.height)

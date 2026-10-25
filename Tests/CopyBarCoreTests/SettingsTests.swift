@@ -57,4 +57,14 @@ final class SettingsTests: XCTestCase {
         XCTAssertNil(Settings.parse("hotkey = none").settings.hotkey)
         XCTAssertNil(Settings.parse("hotkey =").settings.hotkey)
     }
+
+    func testPreviewDelay() {
+        XCTAssertEqual(Settings.parse("preview_delay = 0").settings.previewDelay, 0)
+        XCTAssertEqual(Settings.parse("preview_delay = 1.25").settings.previewDelay, 1.25)
+        XCTAssertNil(Settings.parse("preview_delay = off").settings.previewDelay)
+        XCTAssertNil(Settings.parse("preview_delay =").settings.previewDelay)
+        let (settings, warnings) = Settings.parse("preview_delay = 9")
+        XCTAssertEqual(settings.previewDelay, Settings().previewDelay)
+        XCTAssertEqual(warnings.count, 1)
+    }
 }
