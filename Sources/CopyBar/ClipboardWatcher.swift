@@ -1,6 +1,7 @@
 import AppKit
 import CopyBarCore
 import CryptoKit
+import ImageIO
 
 /// Polls the general pasteboard (macOS has no change notification) and
 /// hands new text and image copies to the history store.
@@ -28,6 +29,11 @@ final class ClipboardWatcher {
 
     /// Formats kept for text, so ⌘V can paste with formatting.
     private static let textTypes: [NSPasteboard.PasteboardType] = [.rtf, .rtfd, .html]
+
+    /// Largest single pasteboard representation that is saved, in bytes.
+    private static let maxDataSize = 32 * 1024 * 1024
+    /// Largest image that is decoded, in pixels (100 megapixels).
+    private static let maxImagePixels = 100_000_000
 
     init(store: HistoryStore, settings: Settings) {
         self.store = store
@@ -105,13 +111,19 @@ final class ClipboardWatcher {
 
         if let text = pasteboard.string(forType: .string),
            !Preview.isBlank(text) {
-            var representations: [(String, Data)] = [(NSPasteboard.PasteboardType.string.rawValue, Data(text.utf8))]
+            let plain = Data(text.utf8)
+            guard plain.count <= Self.maxDataSize else {
+                log.warning("Skipped a copy of \(plain.count, privacy: .public) bytes of text; the limit is \(Self.maxDataSize, privacy: .public)")
+                return
+            }
+            var representations: [(String, Data)] = [(NSPasteboard.PasteboardType.string.rawValue, plain)]
             for type in Self.textTypes where types.contains(type) {
-                if let data = pasteboard.data(forType: type) {
+                // Formatting that is too big is dropped; the plain text is kept.
+                if let data = pasteboard.data(forType: type), data.count <= Self.maxDataSize {
                     representations.append((type.rawValue, data))
                 }
             }
-            store.add(kind: .text, text: text, digest: digest(Data(text.utf8)), representations: representations)
+            store.add(kind: .text, text: text, digest: digest(plain), representations: representations)
         } else if let image = imagePNG(types: types) {
             store.add(kind: .image, text: nil, digest: digest(image.png),
                       representations: [(NSPasteboard.PasteboardType.png.rawValue, image.png)],
@@ -121,18 +133,48 @@ final class ClipboardWatcher {
 
     /// Image on the pasteboard as PNG data, plus its pixel size.
     private func imagePNG(types: [NSPasteboard.PasteboardType]) -> (png: Data, width: Int, height: Int)? {
-        let png: Data
-        if types.contains(.png), let data = pasteboard.data(forType: .png) {
-            png = data
-        } else if types.contains(.tiff), let tiff = pasteboard.data(forType: .tiff),
-                  let rep = NSBitmapImageRep(data: tiff),
-                  let data = rep.representation(using: .png, properties: [:]) {
-            png = data
+        let data: Data
+        let isPNG: Bool
+        if types.contains(.png), let png = pasteboard.data(forType: .png) {
+            data = png
+            isPNG = true
+        } else if types.contains(.tiff), let tiff = pasteboard.data(forType: .tiff) {
+            data = tiff
+            isPNG = false
         } else {
             return nil
         }
-        guard let rep = NSBitmapImageRep(data: png) else { return nil }
-        return (png: png, width: rep.pixelsWide, height: rep.pixelsHigh)
+        guard data.count <= Self.maxDataSize else {
+            log.warning("Skipped an image of \(data.count, privacy: .public) bytes; the limit is \(Self.maxDataSize, privacy: .public)")
+            return nil
+        }
+        // Read the size from the header before decoding anything: a small
+        // file can claim a huge canvas and take gigabytes to decode.
+        guard let size = pixelSize(of: data) else { return nil }
+        guard Double(size.width) * Double(size.height) <= Double(Self.maxImagePixels) else {
+            log.warning("Skipped an image of \(size.width, privacy: .public) × \(size.height, privacy: .public) pixels; the limit is 100 megapixels")
+            return nil
+        }
+        if isPNG {
+            return (png: data, width: size.width, height: size.height)
+        }
+        guard let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) else { return nil }
+        guard png.count <= Self.maxDataSize else {
+            log.warning("Skipped an image of \(png.count, privacy: .public) bytes as PNG; the limit is \(Self.maxDataSize, privacy: .public)")
+            return nil
+        }
+        return (png: png, width: size.width, height: size.height)
+    }
+
+    /// Pixel size of the first image in `data`, read from its header
+    /// without decoding the pixels.
+    private func pixelSize(of data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        return (width: width, height: height)
     }
 
     private func digest(_ data: Data) -> String {

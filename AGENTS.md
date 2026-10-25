@@ -78,7 +78,11 @@ The app target is not unit tested.
 - **What gets captured.** Text: the plain string plus `.rtf`, `.rtfd`,
   `.html` when present, so ⌘V keeps formatting. ⇧-clicking a menu entry
   writes plain text only. Images: stored as PNG; picking one writes PNG
-  and TIFF. File URLs (Finder copies) are skipped on purpose. Copies with
+  and TIFF. File URLs (Finder copies) are skipped on purpose.
+  Representations over 32 MB are not saved (a copy whose plain text or
+  image is that big is skipped), and images over 100 megapixels are
+  skipped; their size is read with `CGImageSourceCopyPropertiesAtIndex`
+  before anything is decoded. Copies with
   nspasteboard.org concealed/transient markers are skipped when
   `ignore_concealed` is on, and so are apps in `ignored_apps`, matched
   case-insensitively by `org.nspasteboard.source` or the frontmost app's

@@ -21,7 +21,8 @@ you paste it with ⌘V as usual.
 - Passwords copied from password managers (anything marked *concealed*, see
   [nspasteboard.org](http://nspasteboard.org)) are never saved.
 - History is saved in `~/Library/Application Support/CopyBar` and survives
-  restarts. Files copied in Finder are ignored.
+  restarts. Files copied in Finder are ignored, and so are very large
+  copies (over 32 MB, or images over 100 megapixels).
 - While the menu is open, keys **1**–**9** pick the first nine entries.
 
 Requires macOS 13 or later. Runs natively on Apple Silicon and Intel.
