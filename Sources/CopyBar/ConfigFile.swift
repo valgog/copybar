@@ -28,12 +28,21 @@ final class ConfigFile {
         }
     }
 
+    /// Writes the default config. Only what CopyBar creates itself is made
+    /// private (folder 0700, file 0600); an existing `~/.config` or config
+    /// file keeps its permissions.
     func createIfMissing() {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: url.path) else { return }
+        let folder = url.deletingLastPathComponent()
         do {
-            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.createDirectory(at: folder.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !fm.fileExists(atPath: folder.path) {
+                try fm.createDirectory(at: folder, withIntermediateDirectories: false,
+                                       attributes: [.posixPermissions: 0o700])
+            }
             try Settings.defaultFileContents.write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         } catch {
             log.error("Could not create config file: \(error.localizedDescription, privacy: .public)")
         }

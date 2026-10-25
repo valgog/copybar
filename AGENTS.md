@@ -93,6 +93,8 @@ The app target is not unit tested.
   `items/<uuid>/<n>.bin`, where `n` indexes `types`. Data is read from disk
   only when an item is picked. **Any new `ClipItem` field must be optional**
   so existing history still decodes. Orphan folders are deleted on load.
+  The history can hold secrets: folders are created 0700 and files 0600,
+  and the `CopyBar` folder is chmodded to 0700 on every start.
 - **Never activate the app before showing the menu.** `NSApp.activate`
   completes asynchronously and closes a menu that just opened. The hotkey
   menu is shown with `menu.popUp(...)` without activation. That also
@@ -142,7 +144,8 @@ The app target is not unit tested.
 
 The config file is `~/.config/copybar/config`, in `key = value` format.
 Lines starting with `#` or `;` are comments, and lists are comma-separated.
-It is created on first run from `Settings.defaultFileContents` and
+It is created on first run from `Settings.defaultFileContents` (folder
+0700 and file 0600 when CopyBar creates them) and
 reloaded when its modification date changes, checked every 2 s.
 `AppDelegate.applySettings()` applies changes live.
 

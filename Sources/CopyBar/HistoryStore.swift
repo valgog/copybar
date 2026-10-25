@@ -22,6 +22,8 @@ struct ClipItem: Codable {
 /// Keeps the clipboard history in memory and mirrors it to
 /// `~/Library/Application Support/CopyBar`. Item data lives on disk and is
 /// only read when an item is picked, so large images don't stay in memory.
+/// The history can hold passwords and other secrets, so the folders are
+/// created 0700 and the files 0600.
 final class HistoryStore {
     private(set) var items: [ClipItem] = []
     var maxItems: Int {
@@ -30,6 +32,8 @@ final class HistoryStore {
 
     private let directory: URL
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
+    private static let directoryPermissions = 0o700
+    private static let filePermissions = 0o600
     private var thumbnails: [UUID: NSImage] = [:]
     private var thumbnailSize = 0
 
@@ -37,7 +41,16 @@ final class HistoryStore {
         self.maxItems = maxItems
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         directory = support.appendingPathComponent("CopyBar", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        try? fm.createDirectory(at: directory, withIntermediateDirectories: true,
+                                attributes: [.posixPermissions: Self.directoryPermissions])
+        // Older versions created the folder with default permissions. Locking
+        // it down is enough: what's inside is then out of reach for others.
+        do {
+            try fm.setAttributes([.posixPermissions: Self.directoryPermissions], ofItemAtPath: directory.path)
+        } catch {
+            log.warning("Could not restrict permissions of \(self.directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
         load()
     }
 
@@ -51,9 +64,10 @@ final class HistoryStore {
                             types: representations.map { $0.0 }, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
         let itemDir = folder(for: item.id)
         do {
-            try FileManager.default.createDirectory(at: itemDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: itemDir, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: Self.directoryPermissions])
             for (index, (_, data)) in representations.enumerated() {
-                try data.write(to: itemDir.appendingPathComponent("\(index).bin"))
+                try write(data, to: itemDir.appendingPathComponent("\(index).bin"))
             }
         } catch {
             log.error("Could not save clipboard item: \(error.localizedDescription, privacy: .public)")
@@ -149,10 +163,18 @@ final class HistoryStore {
     private func save() {
         do {
             let data = try JSONEncoder().encode(items)
-            try data.write(to: indexURL, options: .atomic)
+            try write(data, to: indexURL, options: .atomic)
         } catch {
             log.error("Could not save history: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Writes a file readable only by the user. An atomic write replaces the
+    /// file, so the permissions are set afterwards; the folder is already
+    /// private, so nobody else can open the file in between.
+    private func write(_ data: Data, to url: URL, options: Data.WritingOptions = []) throws {
+        try data.write(to: url, options: options)
+        try FileManager.default.setAttributes([.posixPermissions: Self.filePermissions], ofItemAtPath: url.path)
     }
 
     /// Deletes item folders that are no longer in the index.
