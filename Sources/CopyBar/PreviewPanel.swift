@@ -25,6 +25,15 @@ final class PreviewPanel {
     private static let padding: CGFloat = 10
     private static let textInset: CGFloat = 8
 
+    /// Our own style, put before the rebuilt HTML (which can't contain a
+    /// `<style>`): a sans-serif font instead of WebKit's default Times, and
+    /// Menlo for fixed-width text instead of Courier. In points, which the
+    /// importer keeps as they are.
+    private static let htmlDefaults = """
+        <style>body { font-family: -apple-system, "Helvetica Neue", Helvetica, sans-serif; font-size: 13pt; } \
+        pre, code { font-family: Menlo, Monaco, monospace; font-size: 12pt; }</style>
+        """
+
     private static let formattedTypes: Set<String> = [
         NSPasteboard.PasteboardType.rtfd.rawValue,
         NSPasteboard.PasteboardType.rtf.rawValue,
@@ -236,7 +245,7 @@ final class PreviewPanel {
            let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) {
             // Rebuilt with bare formatting tags only: WebKit renders it, and
             // copied HTML must not run script or load anything.
-            let safe = Data(Preview.safeHTML(html).utf8)
+            let safe = Data((Self.htmlDefaults + Preview.safeHTML(html)).utf8)
             return try? NSAttributedString(data: safe, options: [
                 .documentType: NSAttributedString.DocumentType.html,
                 .characterEncoding: String.Encoding.utf8.rawValue,

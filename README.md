@@ -27,9 +27,10 @@ you paste it with ⌘V as usual.
   content entry for half a second (or move to it with the arrow keys) and
   a larger preview opens next to the menu: the image at a readable size,
   or the text with its formatting, plus when it was copied. Plain text
-  entries show their text in a tooltip instead. Formatted text is
-  shown with its bold, italics, headings, lists and tables; colors, fonts,
-  pictures and links in it are left out of the preview.
+  entries show their text in a tooltip instead. Formatted text from
+  web pages is shown in a sans-serif font with its bold, italics,
+  headings, lists and tables, and code or other fixed-width text in Menlo;
+  colors, other fonts, pictures and links are left out of the preview.
 - Copying something that is already in the history moves it to the top.
 - Passwords copied from password managers (anything marked *concealed*, see
   [nspasteboard.org](http://nspasteboard.org)) are never saved.
