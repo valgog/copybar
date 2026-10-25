@@ -120,10 +120,15 @@ The app target is not unit tested.
     also for ad hoc builds. The app needs no entitlements; if a feature
     ever needs one (e.g. Apple Events), add an entitlements file to the
     `codesign` call.
-- **Single instance.** `main.swift` exits if another process with the same
-  bundle id is running. `make install` waits for the old process to quit
-  before starting the new one, so the new copy doesn't see it and exit.
-- `LoginItem` and the single-instance check do nothing without a bundle
+- **Single instance.** `main.swift` takes an exclusive, non-blocking
+  `flock` on `~/Library/Application Support/CopyBar/CopyBar.lock` and
+  exits if another process holds it. The file descriptor stays open for
+  the life of the process; the kernel releases the lock when it exits,
+  even after a crash. `--unregister-login-item` is handled before the
+  lock, so it works while CopyBar is running. `make install` waits for the
+  old process to quit before starting the new one, so the new copy gets
+  the lock.
+- `LoginItem` and the single-instance lock do nothing without a bundle
   id, which is the case for `swift run`.
 
 ## Settings
