@@ -54,12 +54,10 @@ final class HistoryStore {
         load()
     }
 
-    /// Adds a new entry at the top. A repeated copy replaces the older entry.
+    /// Adds a new entry at the top. A repeated copy replaces the older entry,
+    /// but only once the new one is saved, so a failed write loses nothing.
     func add(kind: ClipItem.Kind, text: String?, digest: String, representations: [(String, Data)],
              pixelWidth: Int? = nil, pixelHeight: Int? = nil) {
-        if let existing = items.first(where: { $0.digest == digest }) {
-            remove(existing.id)
-        }
         let item = ClipItem(id: UUID(), date: Date(), kind: kind, text: text, digest: digest,
                             types: representations.map { $0.0 }, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
         let itemDir = folder(for: item.id)
@@ -73,6 +71,9 @@ final class HistoryStore {
             log.error("Could not save clipboard item: \(error.localizedDescription, privacy: .public)")
             try? FileManager.default.removeItem(at: itemDir)
             return
+        }
+        if let existing = items.first(where: { $0.digest == digest }) {
+            remove(existing.id)
         }
         items.insert(item, at: 0)
         trim()
