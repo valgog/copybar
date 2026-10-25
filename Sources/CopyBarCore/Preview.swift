@@ -72,8 +72,9 @@ public enum Preview {
     /// pieces because nothing is copied through except text, with `<` and
     /// `>` escaped. Bold, italic, underline and strike-through set with an
     /// inline `style` (as Google Docs does) become `<b>`, `<i>`, `<u>` and
-    /// `<s>`. The contents of `script`, `style`, `svg` and similar elements
-    /// are dropped. One linear pass.
+    /// `<s>`, and text in a fixed-width font (inline `font-family`, `<tt>`,
+    /// `<kbd>`, `<samp>`) becomes `<code>`. The contents of `script`,
+    /// `style`, `svg` and similar elements are dropped. One linear pass.
     public static func safeHTML(_ html: String) -> String {
         let s = Array(html.unicodeScalars)
         var output = String.UnicodeScalarView()
@@ -159,7 +160,12 @@ public enum Preview {
             var italic = ["i", "em"].contains(name)
             var underline = ["u", "ins"].contains(name)
             var strike = ["s", "strike", "del"].contains(name)
-            if let style = attribute("style", in: attributes)?.lowercased() {
+            var monospaced = ["tt", "kbd", "samp"].contains(name)
+            if let style = attribute("style", in: attributes)?.lowercased()
+                // Quotes around font names, decoded so `;` splits only declarations.
+                .replacingOccurrences(of: "&quot;", with: "\"")
+                .replacingOccurrences(of: "&#34;", with: "\"")
+                .replacingOccurrences(of: "&#39;", with: "'") {
                 for declaration in style.split(separator: ";") {
                     let parts = declaration.split(separator: ":", maxSplits: 1)
                     guard parts.count == 2 else { continue }
@@ -178,6 +184,8 @@ public enum Preview {
                     case "text-decoration", "text-decoration-line":
                         underline = value.contains("underline")
                         strike = value.contains("line-through")
+                    case "font-family":
+                        if isMonospaced(fontFamily: value) { monospaced = true }
                     default:
                         break
                     }
@@ -187,11 +195,28 @@ public enum Preview {
             if italic { written.append("i") }
             if underline { written.append("u") }
             if strike { written.append("s") }
+            if monospaced, !written.contains("code") { written.append("code") }
             for tag in written { emit("<\(tag)>") }
             stack.append((name, written))
         }
         close(through: 0)
         return String(output)
+    }
+
+    /// Fonts whose names say they are fixed-width, as they appear in a
+    /// lowercased CSS `font-family`. Only the first family counts: the rest
+    /// are fallbacks.
+    private static let monospacedFontNames = [
+        "monospace", "mono", "courier", "menlo", "monaco", "consolas", "inconsolata",
+        "fira code", "source code", "cascadia code", "lucida console",
+    ]
+
+    /// Whether a CSS `font-family` value names a fixed-width font first.
+    static func isMonospaced(fontFamily: String) -> Bool {
+        let first = fontFamily.split(separator: ",").first.map(String.init) ?? ""
+        let name = first.lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+        return !name.hasPrefix("monotype") && monospacedFontNames.contains { name.contains($0) }
     }
 
     /// Structure and formatting tags `safeHTML` writes as they are.

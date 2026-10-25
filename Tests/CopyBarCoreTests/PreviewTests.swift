@@ -177,4 +177,21 @@ final class PreviewTests: XCTestCase {
         XCTAssertEqual(Preview.htmlText(html, maxLength: 1000), "hello")
         XCTAssertEqual(Preview.htmlText("one &#8203; two", maxLength: 100), "one two")
     }
+
+    func testSafeHTMLMarksFixedWidthText() {
+        let html = "<span style=\"font-family: Menlo, Monaco, 'Courier New', monospace\">let x = 1</span> "
+            + "<span style=\"font-family:&quot;Courier New&quot;,monospace;font-weight:700\">bold code</span> "
+            + "<span style=\"font-family: Arial, monospace\">sans</span> <kbd>⌘V</kbd> <code>inline</code>"
+        XCTAssertEqual(Preview.safeHTML(html),
+                       "<code>let x = 1</code> <b><code>bold code</code></b> sans <code>⌘V</code> <code>inline</code>")
+    }
+
+    func testMonospacedFontFamilies() {
+        XCTAssertTrue(Preview.isMonospaced(fontFamily: "SFMono-Regular, Menlo, monospace"))
+        XCTAssertTrue(Preview.isMonospaced(fontFamily: "'JetBrains Mono'"))
+        XCTAssertTrue(Preview.isMonospaced(fontFamily: "\"Courier New\""))
+        XCTAssertFalse(Preview.isMonospaced(fontFamily: "Arial, monospace"))
+        XCTAssertFalse(Preview.isMonospaced(fontFamily: "Monotype Corsiva"))
+        XCTAssertFalse(Preview.isMonospaced(fontFamily: "-apple-system"))
+    }
 }
