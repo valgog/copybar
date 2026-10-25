@@ -9,7 +9,9 @@ at the text cursor; otherwise it opens under the menu bar icon. The picked entry
 you paste it with ⌘V as usual.
 
 - **Text** is shown as one trimmed line (30 characters by default). Markdown
-  is treated as text.
+  is treated as text. Invisible characters (zero-width spaces, text
+  direction overrides, control codes) are left out of the menu, and copies
+  that contain nothing else are not saved.
 - **Rich text** (from web pages, Pages, Word…) keeps its formatting. Pasting
   with ⌘V keeps the formatting; the app's own plain-text paste (⇧⌘V in Google
   Docs, Chrome and Slack, ⌥⇧⌘V in most Mac apps) still works. Hold **⇧** while

@@ -17,7 +17,7 @@ CryptoKit.
 Package.swift                 SwiftPM package, swift-tools 5.9, macOS 13
 Sources/CopyBarCore/          Pure Foundation, no AppKit; unit tested
   Settings.swift              key = value config parser + default file text
-  Preview.swift               one-line text preview trimming
+  Preview.swift               one-line preview, invisible-character stripping, blank check
   HotKeySpec.swift            "cmd+alt+v" → virtual key code + modifiers
 Sources/CopyBar/              The AppKit app
   main.swift                  --unregister-login-item flag, single instance, app start

@@ -104,7 +104,7 @@ final class ClipboardWatcher {
         if types.contains(.fileURL) { return }
 
         if let text = pasteboard.string(forType: .string),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+           !Preview.isBlank(text) {
             var representations: [(String, Data)] = [(NSPasteboard.PasteboardType.string.rawValue, Data(text.utf8))]
             for type in Self.textTypes where types.contains(type) {
                 if let data = pasteboard.data(forType: type) {
