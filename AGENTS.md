@@ -161,8 +161,7 @@ The app target is not unit tested.
   - Before replacing the app, `make install`/`uninstall` run the
     *installed* binary with `--unregister-login-item`, so it removes its
     own login item. Without this, every reinstall adds a duplicate "Open at
-    Login" entry. Every build supports the flag, so it is called without
-    a check. It also unregisters an item the user switched off
+    Login" entry. The flag also unregisters an item the user switched off
     (`.requiresApproval`, still listed) and exits with 1 if the item
     survives. Then the Makefile retries it as a normal app launch
     (`open -W -n`), checks again, and otherwise tells the user to remove
