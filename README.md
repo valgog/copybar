@@ -49,7 +49,9 @@ avoid that, create a code signing certificate once (Keychain Access →
 Certificate Assistant → Create a Certificate…, type *Code Signing*, name it
 e.g. `CopyBar Dev`) and install with
 `make install SIGN_IDENTITY="CopyBar Dev"`. To install somewhere else: `make install PREFIX=~/Applications`.
-`make uninstall` removes the app but keeps your history and settings.
+`make uninstall` removes the app and its login item but keeps your history and
+settings. If an old build left a CopyBar entry in System Settings > General >
+Login Items, remove it there.
 
 ## Settings
 

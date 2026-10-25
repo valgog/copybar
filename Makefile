@@ -26,9 +26,22 @@ endif
 
 # Lets the installed copy remove its own login item. Older builds don't know
 # the flag (they would just start), so only call it if the binary has it.
+# The flag exits with 1 if the item is still there. Then it is retried as a
+# normal app launch through `open`, in case ServiceManagement doesn't accept
+# a copy started from the terminal, and checked once more.
+# macOS keys login items to the signature, so no other build can remove an
+# entry the installed copy can't; say where to remove it by hand.
+LOGIN_ITEMS_HINT := remove it by hand in System Settings > General > Login Items.
 define unregister_login_item
--@if [ -x "$(INSTALLED)" ] && grep -qa -- --unregister-login-item "$(INSTALLED)"; then \
-		"$(INSTALLED)" --unregister-login-item; \
+@if [ -x "$(INSTALLED)" ]; then \
+		if grep -qa -- --unregister-login-item "$(INSTALLED)"; then \
+			"$(INSTALLED)" --unregister-login-item 2>/dev/null \
+				|| { open -W -n -g "$(PREFIX)/$(APP).app" --args --unregister-login-item; \
+					"$(INSTALLED)" --unregister-login-item; } \
+				|| echo "Could not remove the $(APP) login item; $(LOGIN_ITEMS_HINT)"; \
+		else \
+			echo "The installed $(APP) is too old to remove its own login item; $(LOGIN_ITEMS_HINT)"; \
+		fi; \
 	fi
 endef
 
@@ -71,6 +84,8 @@ uninstall:
 	rm -rf "$(PREFIX)/$(APP).app"
 	@echo "Removed the app. Your history and settings are kept in"
 	@echo "  ~/Library/Application Support/CopyBar and ~/.config/copybar"
+	@echo "Builds installed before the login item fix can leave a stale $(APP) entry."
+	@echo "If one is still listed, $(LOGIN_ITEMS_HINT)"
 
 test:
 	swift test

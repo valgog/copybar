@@ -3,9 +3,9 @@ import AppKit
 // `make install` and `make uninstall` run the old copy with this flag so it
 // removes its own login item before it is replaced. macOS keys login items
 // to the app's signature, so a new build can't remove the old entry.
+// Exits with 1 if the login item is still there.
 if CommandLine.arguments.contains("--unregister-login-item") {
-    LoginItem.unregister()
-    exit(0)
+    exit(LoginItem.unregister() ? 0 : 1)
 }
 
 /// Takes the single-instance lock and returns its file descriptor, which must
