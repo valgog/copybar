@@ -23,6 +23,12 @@ you paste it with ⌘V as usual.
   with what they are. Copies from Google Docs, Sheets, Slides and Drawings
   get their editor's icon and a label such as *Google Slides slide*, and a
   slide is titled with the text on it.
+- **Previews.** Rest the pointer on an image, a formatted text or other
+  content entry for half a second (or move to it with the arrow keys) and
+  a larger preview opens next to the menu: the image at a readable size,
+  or the text with its formatting, plus when it was copied. Plain text
+  entries show their text in a tooltip instead. Images and other files
+  that formatted text links to are not downloaded for the preview.
 - Copying something that is already in the history moves it to the top.
 - Passwords copied from password managers (anything marked *concealed*, see
   [nspasteboard.org](http://nspasteboard.org)) are never saved.
@@ -73,6 +79,7 @@ launch_at_login = true
 ignore_concealed = true # skip copies that password managers mark as secret
 ignored_apps =          # comma-separated bundle IDs never to record (any case)
 poll_interval = 0.5     # seconds between clipboard checks (0.1-10)
+preview_delay = 0.5     # seconds before the preview opens (0-5); `off` to turn off
 ```
 
 Find an app's bundle ID with `osascript -e 'id of app "Bitwarden"'`.

@@ -117,4 +117,35 @@ final class PreviewTests: XCTestCase {
         XCTAssertFalse(Preview.isBlank("\u{200B}a"))
         XCTAssertFalse(Preview.isBlank(" . "))
     }
+
+    func testOfflineHTMLRemovesFetchingContent() {
+        let html = """
+            <meta charset="utf-8"><link rel="stylesheet" href="https://x.test/a.css">\
+            <p style="background: URL( 'https://x.test/b.png' )">Hello <img src="https://x.test/c.png" alt="c">world</p>\
+            <script src="https://x.test/d.js">alert(1)</script><iframe src="https://x.test/e"></iframe>\
+            <table background="https://x.test/f.png"><tr><td>cell</td></tr></table>\
+            <style>@import "https://x.test/g.css"; b { color: red }</style><b>bold</b> <a href="https://x.test/">link</a>
+            """
+        let offline = Preview.offlineHTML(html)
+        XCTAssertFalse(offline.contains("x.test/a.css"))
+        XCTAssertFalse(offline.lowercased().contains("url("))
+        XCTAssertFalse(offline.contains("<img"))
+        XCTAssertFalse(offline.contains("<script"))
+        XCTAssertFalse(offline.contains("alert"))
+        XCTAssertFalse(offline.contains("<iframe"))
+        XCTAssertFalse(offline.contains("f.png"))
+        XCTAssertFalse(offline.contains("@import"))
+        // Text, formatting and links stay.
+        XCTAssertTrue(offline.contains("<meta charset=\"utf-8\">"))
+        XCTAssertTrue(offline.contains("Hello world"))
+        XCTAssertTrue(offline.contains("<td>cell</td>"))
+        XCTAssertTrue(offline.contains("<b>bold</b>"))
+        XCTAssertTrue(offline.contains("b { color: red }"))
+        XCTAssertTrue(offline.contains("<a href=\"https://x.test/\">link</a>"))
+    }
+
+    func testOfflineHTMLStripsEveryLoadingAttribute() {
+        let html = "<video poster='p.png'></video><div data=x background=y.png class=\"k\" src=\"z\">t</div>"
+        XCTAssertEqual(Preview.offlineHTML(html), "<div class=\"k\">t</div>")
+    }
 }

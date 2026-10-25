@@ -64,6 +64,45 @@ public enum Preview {
         return result
     }
 
+    /// `html` with everything removed that would make WebKit fetch
+    /// something while rendering it: images, frames, embedded media,
+    /// scripts, `<link>` and `<base>` elements, `src`-like attributes, and
+    /// CSS `url(...)` and `@import`. Used before the hover preview renders
+    /// copied HTML, so opening a preview never loads remote files (tracking
+    /// pixels) or hangs the menu on a slow server. Regex based: good enough
+    /// for a preview, not a security boundary for untrusted pages.
+    public static func offlineHTML(_ html: String) -> String {
+        var result = html
+        for (pattern, template) in offlineRules {
+            // Attribute removal works one attribute per match; repeat until stable.
+            while true {
+                let range = NSRange(result.startIndex..., in: result)
+                let replaced = pattern.stringByReplacingMatches(in: result, range: range, withTemplate: template)
+                if replaced == result { break }
+                result = replaced
+            }
+        }
+        return result
+    }
+
+    private static let offlineRules: [(NSRegularExpression, String)] = {
+        func regex(_ pattern: String) -> NSRegularExpression {
+            // The patterns are constant, so a failure is a programming error.
+            try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
+        }
+        let fetching = "script|iframe|frame|object|embed|video|audio|picture|noscript"
+        return [
+            // Elements with fetching content, up to their end tag.
+            (regex("<(\(fetching))\\b[^>]*>.*?</\\1\\s*>"), ""),
+            // Single tags that fetch something, and openers left without an end tag.
+            (regex("</?(?:\(fetching)|img|image|link|base|source|track|input|frameset)\\b[^>]*>"), ""),
+            // Attributes that load a file, on any remaining element.
+            (regex("(<[a-z][^>]*?)\\s(?:src|srcset|background|poster|data|lowsrc|dynsrc)\\s*=\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s>]+)"), "$1"),
+            (regex("url\\s*\\("), "blocked("),
+            (regex("@import"), "@blocked"),
+        ]
+    }()
+
     /// The visible text of an HTML fragment, collapsed to single spaces and
     /// at most `maxLength` characters: tags and comments are dropped, and so
     /// is the content of `script`, `style`, `title` and `template`. Block

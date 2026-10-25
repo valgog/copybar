@@ -10,6 +10,9 @@ public struct Settings: Equatable {
     public var launchAtLogin = true
     public var ignoreConcealed = true
     public var ignoredApps: [String] = []
+    /// Seconds an entry must stay highlighted before its preview opens;
+    /// nil turns previews off.
+    public var previewDelay: Double? = 0.5
 
     public init() {}
 
@@ -87,6 +90,15 @@ public struct Settings: Equatable {
                     .split(separator: ",")
                     .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
                     .filter { !$0.isEmpty }
+            case "preview_delay":
+                let lowered = value.lowercased()
+                if lowered.isEmpty || lowered == "none" || lowered == "off" {
+                    settings.previewDelay = nil
+                } else if let d = Double(value), (0...5).contains(d) {
+                    settings.previewDelay = d
+                } else {
+                    warnings.append("line \(lineNo): preview_delay must be a number of seconds in 0...5, or off")
+                }
             default:
                 warnings.append("line \(lineNo): unknown key `\(key)`")
             }
@@ -121,6 +133,10 @@ public struct Settings: Equatable {
     # Comma-separated bundle IDs of apps whose copies are never saved,
     # e.g. com.apple.keychainaccess, com.bitwarden.desktop
     ignored_apps =
+
+    # Seconds to rest on an image or formatted entry before a larger
+    # preview opens next to the menu (0-5). Use `off` to turn it off.
+    preview_delay = 0.5
 
     # How often to check the clipboard, in seconds (0.1-10).
     poll_interval = 0.5

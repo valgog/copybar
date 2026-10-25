@@ -24,6 +24,7 @@ Sources/CopyBar/              The AppKit app
   AppDelegate.swift           status item, menu building, picking, hotkey handling
   ClipboardWatcher.swift      polls NSPasteboard, filters, captures text/images
   HistoryStore.swift          in-memory history + on-disk persistence, thumbnails
+  PreviewPanel.swift          hover preview panel next to the menu
   ConfigFile.swift            ~/.config/copybar/config, reload on mtime change
   HotKey.swift                Carbon RegisterEventHotKey wrapper
   TextCaret.swift             text cursor position via the Accessibility API
@@ -121,6 +122,19 @@ The app target is not unit tested.
   completes asynchronously and closes a menu that just opened. The hotkey
   menu is shown with `menu.popUp(...)` without activation. That also
   keeps focus in the user's app so they can press ⌘V themselves.
+- **Hover previews.** `menu(_:willHighlight:)` starts a timer
+  (`preview_delay`) in the `.common` run loop modes, which include the
+  event tracking mode a menu runs in; `menuDidClose` hides the panel.
+  `PreviewPanel` is a borderless non-activating `NSPanel` above the
+  pop-up menu level that ignores the mouse and is shown with
+  `orderFrontRegardless()`, so the menu stays open and keeps the
+  keyboard. NSMenu has no API for an item's frame, so the panel goes
+  beside the menu window (found in `NSApp.windows` at the pop-up menu
+  level), level with the pointer or the menu's top. Copied HTML goes
+  through `Preview.offlineHTML` before `NSAttributedString` renders it, so
+  a preview never downloads images or stylesheets; HTML over 512 KB is
+  shown as plain text. Plain text entries keep their tooltip instead;
+  previewed entries drop it so the two don't overlap.
 - **Hotkey menu placement.** If Accessibility access is granted and the
   focused element reports a text cursor, the menu opens just below it
   (`TextCaret.rect()`). AX coordinates have a top-left origin on the main

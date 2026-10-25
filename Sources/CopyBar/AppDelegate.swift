@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let config = ConfigFile()
     private var store: HistoryStore!
     private var watcher: ClipboardWatcher!
+    private var preview: PreviewPanel!
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
     private var hotKey: HotKey?
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store = HistoryStore(maxItems: settings.maxItems)
         watcher = ClipboardWatcher(store: store, settings: settings)
         watcher.start()
+        preview = PreviewPanel(store: store)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let icon = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "CopyBar")
@@ -103,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     ?? NSImage(systemSymbolName: "square.on.square", accessibilityDescription: label)
                 menuItem.toolTip = [label, item.text].compactMap { $0 }.joined(separator: "\n\n")
             }
+            // The preview panel replaces the tooltip; showing both would overlap.
+            if settings.previewDelay != nil, PreviewPanel.hasPreview(item) {
+                menuItem.toolTip = nil
+            }
             // Keys 1-9 pick the first nine entries while the menu is open.
             if index < 9 {
                 menuItem.keyEquivalent = String(index + 1)
@@ -124,6 +130,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(settingsItem)
         let quit = NSMenuItem(title: "Quit CopyBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
+    }
+
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        let clip = (item?.representedObject as? UUID).flatMap { store.item($0) }
+        preview.schedule(clip, delay: settings.previewDelay)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        preview.reset()
     }
 
     @objc private func pick(_ sender: NSMenuItem) {
