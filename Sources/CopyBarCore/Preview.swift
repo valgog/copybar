@@ -64,44 +64,226 @@ public enum Preview {
         return result
     }
 
-    /// `html` with everything removed that would make WebKit fetch
-    /// something while rendering it: images, frames, embedded media,
-    /// scripts, `<link>` and `<base>` elements, `src`-like attributes, and
-    /// CSS `url(...)` and `@import`. Used before the hover preview renders
-    /// copied HTML, so opening a preview never loads remote files (tracking
-    /// pixels) or hangs the menu on a slow server. Regex based: good enough
-    /// for a preview, not a security boundary for untrusted pages.
-    public static func offlineHTML(_ html: String) -> String {
-        var result = html
-        for (pattern, template) in offlineRules {
-            // Attribute removal works one attribute per match; repeat until stable.
-            while true {
-                let range = NSRange(result.startIndex..., in: result)
-                let replaced = pattern.stringByReplacingMatches(in: result, range: range, withTemplate: template)
-                if replaced == result { break }
-                result = replaced
+    /// Copied HTML rebuilt for the hover preview, which renders it with
+    /// `NSAttributedString`'s WebKit-based importer. Only text and a short
+    /// list of structure and formatting tags survive, written afresh with no
+    /// attributes, so the result can't run script or load anything: there
+    /// are no event handlers, URLs or CSS, and no tag can be rebuilt from
+    /// pieces because nothing is copied through except text, with `<` and
+    /// `>` escaped. Bold, italic, underline and strike-through set with an
+    /// inline `style` (as Google Docs does) become `<b>`, `<i>`, `<u>` and
+    /// `<s>`. The contents of `script`, `style`, `svg` and similar elements
+    /// are dropped. One linear pass.
+    public static func safeHTML(_ html: String) -> String {
+        let s = Array(html.unicodeScalars)
+        var output = String.UnicodeScalarView()
+        func emit(_ text: String) { output.append(contentsOf: text.unicodeScalars) }
+        /// Open elements and the tags written for each, closed in reverse.
+        var stack: [(name: String, written: [String])] = []
+        func close(through index: Int) {
+            while stack.count > index, let element = stack.popLast() {
+                for tag in element.written.reversed() { emit("</\(tag)>") }
             }
         }
-        return result
+
+        var i = 0
+        while i < s.count {
+            let c = s[i]
+            if c == ">" {
+                emit("&gt;")
+                i += 1
+                continue
+            }
+            guard c == "<" else {
+                output.append(c)
+                i += 1
+                continue
+            }
+            if hasPrefix(s, "<!--", at: i) {
+                i = index(after: "-->", in: s, from: i + 4)
+                continue
+            }
+            let next = i + 1
+            if next < s.count, s[next] == "!" || s[next] == "?" {
+                i = index(after: ">", in: s, from: next)
+                continue
+            }
+            let closing = next < s.count && s[next] == "/"
+            var k = closing ? next + 1 : next
+            guard k < s.count, isASCIILetter(s[k]) else {
+                emit("&lt;")
+                i += 1
+                continue
+            }
+            let nameStart = k
+            while k < s.count, isASCIILetter(s[k]) || isASCIIDigit(s[k]) || s[k] == "-" || s[k] == ":" {
+                k += 1
+            }
+            let name = String(String.UnicodeScalarView(s[nameStart..<k])).lowercased()
+            // The tag ends at the first `>` outside a quoted attribute value.
+            let attributesStart = k
+            var quote: Unicode.Scalar?
+            var afterEquals = false
+            while k < s.count {
+                let d = s[k]
+                if let q = quote {
+                    if d == q { quote = nil }
+                } else if d == ">" {
+                    break
+                } else if afterEquals, d == "\"" || d == "'" {
+                    quote = d
+                }
+                if quote == nil, !d.properties.isWhitespace { afterEquals = d == "=" }
+                k += 1
+            }
+            let attributes = String(String.UnicodeScalarView(s[attributesStart..<k]))
+            let selfClosing = attributes.hasSuffix("/")
+            i = min(k + 1, s.count)
+
+            if closing {
+                if let index = stack.lastIndex(where: { $0.name == name }) { close(through: index) }
+                continue
+            }
+            if hiddenContentElements.contains(name) {
+                if !selfClosing { i = endOfElement(name, in: s, from: i) }
+                continue
+            }
+            if name == "br" || name == "hr" {
+                emit("<\(name)>")
+                continue
+            }
+            // Deeper nesting is flattened, so finding an end tag stays cheap.
+            guard !selfClosing, stack.count < 256 else { continue }
+            var written = keptElements.contains(name) ? [name] : []
+            var bold = ["b", "strong"].contains(name)
+            var italic = ["i", "em"].contains(name)
+            var underline = ["u", "ins"].contains(name)
+            var strike = ["s", "strike", "del"].contains(name)
+            if let style = attribute("style", in: attributes)?.lowercased() {
+                for declaration in style.split(separator: ";") {
+                    let parts = declaration.split(separator: ":", maxSplits: 1)
+                    guard parts.count == 2 else { continue }
+                    let property = parts[0].trimmingCharacters(in: .whitespaces)
+                    let value = parts[1].replacingOccurrences(of: "!important", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                    switch property {
+                    case "font-weight":
+                        if value == "bold" || value == "bolder" || (Int(value) ?? 0) >= 600 {
+                            bold = true
+                        } else if value == "normal" || value == "lighter" || Int(value) != nil {
+                            bold = false
+                        }
+                    case "font-style":
+                        italic = value == "italic" || value == "oblique"
+                    case "text-decoration", "text-decoration-line":
+                        underline = value.contains("underline")
+                        strike = value.contains("line-through")
+                    default:
+                        break
+                    }
+                }
+            }
+            if bold { written.append("b") }
+            if italic { written.append("i") }
+            if underline { written.append("u") }
+            if strike { written.append("s") }
+            for tag in written { emit("<\(tag)>") }
+            stack.append((name, written))
+        }
+        close(through: 0)
+        return String(output)
     }
 
-    private static let offlineRules: [(NSRegularExpression, String)] = {
-        func regex(_ pattern: String) -> NSRegularExpression {
-            // The patterns are constant, so a failure is a programming error.
-            try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
+    /// Structure and formatting tags `safeHTML` writes as they are.
+    private static let keptElements: Set<String> = [
+        "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "pre", "code",
+        "table", "thead", "tbody", "tfoot", "tr", "td", "th", "sup", "sub",
+    ]
+    /// Elements whose content is not text to show.
+    private static let hiddenContentElements: Set<String> = [
+        "script", "style", "title", "template", "noscript", "svg", "math", "head", "iframe", "object",
+        "textarea", "select", "xmp", "plaintext", "noembed", "noframes",
+    ]
+
+    private static func isASCIILetter(_ scalar: Unicode.Scalar) -> Bool {
+        (0x41...0x5A).contains(scalar.value) || (0x61...0x7A).contains(scalar.value)
+    }
+
+    private static func isASCIIDigit(_ scalar: Unicode.Scalar) -> Bool {
+        (0x30...0x39).contains(scalar.value)
+    }
+
+    /// The scalar's value, lowercased if it is an ASCII capital letter.
+    private static func asciiLowercased(_ scalar: Unicode.Scalar) -> UInt32 {
+        (0x41...0x5A).contains(scalar.value) ? scalar.value + 0x20 : scalar.value
+    }
+
+    /// Whether `s` has `prefix` at `index`, ignoring ASCII case.
+    private static func hasPrefix(_ s: [Unicode.Scalar], _ prefix: String, at index: Int) -> Bool {
+        var offset = index
+        for scalar in prefix.unicodeScalars {
+            guard offset < s.count, asciiLowercased(s[offset]) == asciiLowercased(scalar) else { return false }
+            offset += 1
         }
-        let fetching = "script|iframe|frame|object|embed|video|audio|picture|noscript"
-        return [
-            // Elements with fetching content, up to their end tag.
-            (regex("<(\(fetching))\\b[^>]*>.*?</\\1\\s*>"), ""),
-            // Single tags that fetch something, and openers left without an end tag.
-            (regex("</?(?:\(fetching)|img|image|link|base|source|track|input|frameset)\\b[^>]*>"), ""),
-            // Attributes that load a file, on any remaining element.
-            (regex("(<[a-z][^>]*?)\\s(?:src|srcset|background|poster|data|lowsrc|dynsrc)\\s*=\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s>]+)"), "$1"),
-            (regex("url\\s*\\("), "blocked("),
-            (regex("@import"), "@blocked"),
-        ]
-    }()
+        return true
+    }
+
+    /// The index just past the next `needle` at or after `start`, or the end.
+    private static func index(after needle: String, in s: [Unicode.Scalar], from start: Int) -> Int {
+        let length = needle.unicodeScalars.count
+        var i = start
+        while i < s.count {
+            if hasPrefix(s, needle, at: i) { return i + length }
+            i += 1
+        }
+        return s.count
+    }
+
+    /// The index just past the end tag of `name`, or the end when there is none.
+    private static func endOfElement(_ name: String, in s: [Unicode.Scalar], from start: Int) -> Int {
+        var i = start
+        while i < s.count {
+            if s[i] == "<", hasPrefix(s, "</" + name, at: i) {
+                let after = i + 2 + name.unicodeScalars.count
+                if after >= s.count || !isASCIILetter(s[after]) {
+                    return index(after: ">", in: s, from: after)
+                }
+            }
+            i += 1
+        }
+        return s.count
+    }
+
+    /// The value of attribute `name` in a tag's attribute text, unquoted.
+    private static func attribute(_ name: String, in attributes: String) -> String? {
+        let s = Array(attributes.unicodeScalars)
+        var i = 0
+        func skipSpace() { while i < s.count, s[i].properties.isWhitespace || s[i] == "/" { i += 1 } }
+        while i < s.count {
+            skipSpace()
+            let start = i
+            while i < s.count, !s[i].properties.isWhitespace, s[i] != "=", s[i] != "/" { i += 1 }
+            let attributeName = String(String.UnicodeScalarView(s[start..<i])).lowercased()
+            while i < s.count, s[i].properties.isWhitespace { i += 1 }
+            guard i < s.count, s[i] == "=" else {
+                if i == start { i += 1 }
+                continue
+            }
+            i += 1
+            while i < s.count, s[i].properties.isWhitespace { i += 1 }
+            var value = String.UnicodeScalarView()
+            if i < s.count, s[i] == "\"" || s[i] == "'" {
+                let quote = s[i]
+                i += 1
+                while i < s.count, s[i] != quote { value.append(s[i]); i += 1 }
+                i += 1
+            } else {
+                while i < s.count, !s[i].properties.isWhitespace { value.append(s[i]); i += 1 }
+            }
+            if attributeName == name { return String(value) }
+        }
+        return nil
+    }
 
     /// The visible text of an HTML fragment, collapsed to single spaces and
     /// at most `maxLength` characters: tags and comments are dropped, and so
@@ -118,12 +300,15 @@ public enum Preview {
                 pendingSpace = !result.isEmpty
                 return
             }
+            // Invisible characters don't count, so they can't use up maxLength.
+            let visible = visibleScalars(of: character)
+            if visible.isEmpty { return }
             if pendingSpace {
                 result.append(" ")
                 count += 1
                 pendingSpace = false
             }
-            result.append(character)
+            result += visible
             count += 1
         }
 

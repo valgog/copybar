@@ -161,7 +161,7 @@ final class PreviewPanel {
     /// order), or its plain text when there is no formatting worth showing.
     private func text(for item: ClipItem) -> NSAttributedString? {
         if let cached = renderedText[item.id] { return cached }
-        var text = formattedText(of: item)
+        var text = formattedText(of: item).map(Self.cleaned)
         if let formatted = text, Preview.isBlank(formatted.string) { text = nil }
         if text == nil, let plain = item.kind == .text ? store.fullText(of: item) : item.text,
            !Preview.isBlank(plain) {
@@ -172,11 +172,53 @@ final class PreviewPanel {
         }
         guard var result = text else { return nil }
         if result.length > Self.maxTextLength {
-            let cut = NSMutableAttributedString(attributedString: result.attributedSubstring(from: NSRange(location: 0, length: Self.maxTextLength)))
+            // Cut at a whole character, never inside a surrogate pair or emoji sequence.
+            let end = (result.string as NSString).rangeOfComposedCharacterSequence(at: Self.maxTextLength).location
+            let cut = NSMutableAttributedString(attributedString: result.attributedSubstring(from: NSRange(location: 0, length: end)))
             cut.append(NSAttributedString(string: "…"))
             result = cut
         }
         renderedText[item.id] = result
+        return result
+    }
+
+    /// `text` without attachments and invisible characters, starting at its
+    /// first visible character. Attachments (pictures in RTFD and RTF) would
+    /// be decoded at full size during layout, and no size limit was checked
+    /// for them when they were copied. Invisible characters are dropped as
+    /// in the menu titles (`Preview.sanitized`), so bidi overrides can't
+    /// disguise the text.
+    private static func cleaned(_ text: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: text)
+        var attachments: [NSRange] = []
+        result.enumerateAttribute(.attachment, in: NSRange(location: 0, length: result.length)) { value, range, _ in
+            if value != nil { attachments.append(range) }
+        }
+        for range in attachments.reversed() {
+            result.deleteCharacters(in: range)
+        }
+
+        let string = result.string
+        if Preview.sanitized(string) != string {
+            var replacements: [(NSRange, String)] = []
+            let nsString = string as NSString
+            nsString.enumerateSubstrings(in: NSRange(location: 0, length: nsString.length),
+                                         options: .byComposedCharacterSequences) { substring, range, _, _ in
+                guard let substring else { return }
+                let visible = Preview.sanitized(substring)
+                if visible != substring { replacements.append((range, visible)) }
+            }
+            for (range, visible) in replacements.reversed() {
+                result.replaceCharacters(in: range, with: visible)
+            }
+        }
+
+        let start = (result.string as NSString).rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.inverted).location
+        if start == NSNotFound {
+            result.deleteCharacters(in: NSRange(location: 0, length: result.length))
+        } else if start > 0 {
+            result.deleteCharacters(in: NSRange(location: 0, length: start))
+        }
         return result
     }
 
@@ -192,9 +234,10 @@ final class PreviewPanel {
         }
         if let data = representations[NSPasteboard.PasteboardType.html.rawValue], data.count <= Self.maxHTMLSize,
            let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) {
-            // Never let the preview download images or stylesheets.
-            let offline = Data(Preview.offlineHTML(html).utf8)
-            return try? NSAttributedString(data: offline, options: [
+            // Rebuilt with bare formatting tags only: WebKit renders it, and
+            // copied HTML must not run script or load anything.
+            let safe = Data(Preview.safeHTML(html).utf8)
+            return try? NSAttributedString(data: safe, options: [
                 .documentType: NSAttributedString.DocumentType.html,
                 .characterEncoding: String.Encoding.utf8.rawValue,
             ], documentAttributes: nil)

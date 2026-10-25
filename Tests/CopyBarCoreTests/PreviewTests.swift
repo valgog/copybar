@@ -1,4 +1,5 @@
 @testable import CopyBarCore
+import Foundation
 import XCTest
 
 final class PreviewTests: XCTestCase {
@@ -118,34 +119,62 @@ final class PreviewTests: XCTestCase {
         XCTAssertFalse(Preview.isBlank(" . "))
     }
 
-    func testOfflineHTMLRemovesFetchingContent() {
+    func testSafeHTMLKeepsOnlyBareFormattingTags() {
         let html = """
             <meta charset="utf-8"><link rel="stylesheet" href="https://x.test/a.css">\
-            <p style="background: URL( 'https://x.test/b.png' )">Hello <img src="https://x.test/c.png" alt="c">world</p>\
-            <script src="https://x.test/d.js">alert(1)</script><iframe src="https://x.test/e"></iframe>\
-            <table background="https://x.test/f.png"><tr><td>cell</td></tr></table>\
-            <style>@import "https://x.test/g.css"; b { color: red }</style><b>bold</b> <a href="https://x.test/">link</a>
+            <p style="background: url(https://x.test/b.png)" onclick="go()">Hello <img src="https://x.test/c.png">world</p>\
+            <script src="https://x.test/d.js">alert(1)</script><iframe src="https://x.test/e">frame</iframe>\
+            <table background="https://x.test/f.png"><tr><td class="c">cell</td></tr></table>\
+            <style>@import "https://x.test/g.css";</style><strong>bold</strong> <a href="https://x.test/">link</a>
             """
-        let offline = Preview.offlineHTML(html)
-        XCTAssertFalse(offline.contains("x.test/a.css"))
-        XCTAssertFalse(offline.lowercased().contains("url("))
-        XCTAssertFalse(offline.contains("<img"))
-        XCTAssertFalse(offline.contains("<script"))
-        XCTAssertFalse(offline.contains("alert"))
-        XCTAssertFalse(offline.contains("<iframe"))
-        XCTAssertFalse(offline.contains("f.png"))
-        XCTAssertFalse(offline.contains("@import"))
-        // Text, formatting and links stay.
-        XCTAssertTrue(offline.contains("<meta charset=\"utf-8\">"))
-        XCTAssertTrue(offline.contains("Hello world"))
-        XCTAssertTrue(offline.contains("<td>cell</td>"))
-        XCTAssertTrue(offline.contains("<b>bold</b>"))
-        XCTAssertTrue(offline.contains("b { color: red }"))
-        XCTAssertTrue(offline.contains("<a href=\"https://x.test/\">link</a>"))
+        XCTAssertEqual(Preview.safeHTML(html),
+                       "<p>Hello world</p><table><tr><td>cell</td></tr></table><b>bold</b> link")
     }
 
-    func testOfflineHTMLStripsEveryLoadingAttribute() {
-        let html = "<video poster='p.png'></video><div data=x background=y.png class=\"k\" src=\"z\">t</div>"
-        XCTAssertEqual(Preview.offlineHTML(html), "<div class=\"k\">t</div>")
+    func testSafeHTMLBlocksReviewPayloads() {
+        let payloads = [
+            "<body onload=\"fetch('https://x.test')\">a</body>",
+            "<svg onload=\"fetch('https://x.test')\"><image href=\"https://x.test/a.png\"/></svg>b",
+            "<div style=\"animation-name:x\" onanimationstart=\"go()\">c</div>",
+            "<scr<img>ipt>alert(1)</scr<img>ipt>",
+            "<img alt=\">\" src=\"https://x.test/t.png\">",
+            "<img alt=\"<img\" title=\">\" src=\"https://x.test/t.png\">",
+            "<div style=\"background: &#x75;rl(https://x.test/a.png)\">d</div>",
+            "<style>@\\69mport 'https://x.test/a.css'</style>",
+            "<meta http-equiv=\"refresh\" content=\"0;url=https://x.test\">",
+            "<div title=\"a\"background=\"https://x.test/a.png\">e</div>",
+            "<<script>script>alert(1)<</script>/script>",
+        ]
+        for payload in payloads {
+            let safe = Preview.safeHTML(payload)
+            XCTAssertFalse(safe.contains("x.test") && safe.contains("<img"), safe)
+            XCTAssertNil(safe.range(of: "<[a-z]+[^>]*[ =\"']", options: .regularExpression), "attribute left in \(safe)")
+            XCTAssertNil(safe.range(of: "<script", options: .caseInsensitive), safe)
+            let tags = try! NSRegularExpression(pattern: "</?([a-z0-9]+)>")
+            for match in tags.matches(in: safe, range: NSRange(safe.startIndex..., in: safe)) {
+                let tag = (safe as NSString).substring(with: match.range(at: 1))
+                XCTAssertTrue(["b", "i", "u", "s", "p", "div", "br"].contains(tag), "unexpected <\(tag)> in \(safe)")
+            }
+        }
+        // `<scr<img>` is one tag named "scr", dropped; the rest is text.
+        XCTAssertEqual(Preview.safeHTML("<scr<img>ipt>alert(1)</scr<img>ipt>"), "ipt&gt;alert(1)ipt&gt;")
+    }
+
+    func testSafeHTMLMapsInlineStyles() {
+        // Google Docs wraps a copy in a <b> that isn't bold.
+        let docs = "<b style=\"font-weight:normal;\" id=\"docs-internal-guid-1\"><span style=\"font-weight:700;font-style:italic\">x</span>"
+            + "<span style=\"text-decoration:underline line-through\">y</span></b>"
+        XCTAssertEqual(Preview.safeHTML(docs), "<b><i>x</i></b><u><s>y</s></u>")
+    }
+
+    func testSafeHTMLEscapesTextAndClosesTags() {
+        XCTAssertEqual(Preview.safeHTML("1 < 2 > 0 <b>unclosed <i>x"), "1 &lt; 2 &gt; 0 <b>unclosed <i>x</i></b>")
+        XCTAssertEqual(Preview.safeHTML("<p>a<!-- <b> -->b<br/>c</p><script>never closed"), "<p>ab<br>c</p>")
+    }
+
+    func testHTMLTextSkipsInvisibleCharactersBeforeCounting() {
+        let html = String(repeating: "&#8203;", count: 1000) + "hello"
+        XCTAssertEqual(Preview.htmlText(html, maxLength: 1000), "hello")
+        XCTAssertEqual(Preview.htmlText("one &#8203; two", maxLength: 100), "one two")
     }
 }

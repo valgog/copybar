@@ -130,10 +130,14 @@ The app target is not unit tested.
   `orderFrontRegardless()`, so the menu stays open and keeps the
   keyboard. NSMenu has no API for an item's frame, so the panel goes
   beside the menu window (found in `NSApp.windows` at the pop-up menu
-  level), level with the pointer or the menu's top. Copied HTML goes
-  through `Preview.offlineHTML` before `NSAttributedString` renders it, so
-  a preview never downloads images or stylesheets; HTML over 512 KB is
-  shown as plain text. Plain text entries keep their tooltip instead;
+  level), level with the pointer or the menu's top. `NSAttributedString`'s
+  HTML import runs WebKit, which would run script and load files, so
+  copied HTML is first rebuilt by `Preview.safeHTML`: a single-pass
+  allowlist that keeps text and bare formatting tags, with no attributes.
+  Never pass copied HTML to it any other way, and don't add attributes or
+  tags to the allowlist that can load or run anything. HTML over 512 KB
+  is shown as plain text. Attachments (RTFD/RTF pictures) and invisible
+  characters are removed before layout. Plain text entries keep their tooltip instead;
   previewed entries drop it so the two don't overlap.
 - **Hotkey menu placement.** If Accessibility access is granted and the
   focused element reports a text cursor, the menu opens just below it

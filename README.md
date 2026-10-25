@@ -27,8 +27,9 @@ you paste it with ⌘V as usual.
   content entry for half a second (or move to it with the arrow keys) and
   a larger preview opens next to the menu: the image at a readable size,
   or the text with its formatting, plus when it was copied. Plain text
-  entries show their text in a tooltip instead. Images and other files
-  that formatted text links to are not downloaded for the preview.
+  entries show their text in a tooltip instead. Formatted text is
+  shown with its bold, italics, headings, lists and tables; colors, fonts,
+  pictures and links in it are left out of the preview.
 - Copying something that is already in the history moves it to the top.
 - Passwords copied from password managers (anything marked *concealed*, see
   [nspasteboard.org](http://nspasteboard.org)) are never saved.
