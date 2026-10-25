@@ -1,0 +1,27 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Build universal app
+        run: make app
+      - name: Check architectures
+        run: |
+          archs=$(lipo -archs .build/CopyBar.app/Contents/MacOS/CopyBar)
+          echo "$archs"
+          [[ "$archs" == *arm64* && "$archs" == *x86_64* ]]
+      - name: Package
+        run: ditto -c -k --keepParent .build/CopyBar.app CopyBar.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CopyBar
+          path: CopyBar.zip
