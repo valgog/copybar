@@ -87,7 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .text:
                 let text = item.text ?? ""
                 menuItem.title = Preview.line(text, maxLength: settings.textLength)
-                menuItem.toolTip = Preview.sanitized(String(text.prefix(1000)))
+                // Already sanitized and at most 1000 characters (HistoryStore.shortened).
+                menuItem.toolTip = text
             case .image:
                 menuItem.image = store.thumbnail(of: item, size: settings.imageSize)
                 if let width = item.pixelWidth, let height = item.pixelHeight {

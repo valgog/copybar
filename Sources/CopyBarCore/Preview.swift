@@ -48,6 +48,22 @@ public enum Preview {
         return result
     }
 
+    /// The first `maxLength` characters of `sanitized(text)`, starting at
+    /// the first visible character. Stops reading once it has them, so it is
+    /// cheap on a huge copy.
+    public static func visiblePrefix(_ text: String, maxLength: Int) -> String {
+        var result = ""
+        var count = 0
+        for character in text where count < maxLength {
+            if result.isEmpty, character.isWhitespace { continue }
+            let visible = visibleScalars(of: character)
+            if visible.isEmpty { continue }
+            result += visible
+            count += 1
+        }
+        return result
+    }
+
     /// Whether `text` has nothing visible: only whitespace and the
     /// invisible characters that `sanitized` removes. Such copies aren't
     /// worth saving.

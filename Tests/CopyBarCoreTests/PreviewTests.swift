@@ -2,6 +2,14 @@
 import XCTest
 
 final class PreviewTests: XCTestCase {
+    func testVisiblePrefixSkipsLeadingInvisibleCharacters() {
+        let text = String(repeating: "\u{200B} \n", count: 2000) + "hello\u{202E} world"
+        XCTAssertEqual(Preview.visiblePrefix(text, maxLength: 1000), "hello world")
+        XCTAssertEqual(Preview.visiblePrefix(text, maxLength: 5), "hello")
+        XCTAssertEqual(Preview.visiblePrefix("one\n two", maxLength: 100), "one\n two")
+        XCTAssertEqual(Preview.visiblePrefix(" \u{200B}\n", maxLength: 100), "")
+    }
+
     func testShortTextIsUnchanged() {
         XCTAssertEqual(Preview.line("hello", maxLength: 30), "hello")
     }

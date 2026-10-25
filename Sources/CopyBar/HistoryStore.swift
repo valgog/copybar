@@ -168,8 +168,10 @@ final class HistoryStore {
         try? FileManager.default.removeItem(at: folder(for: id))
     }
 
+    /// Leading whitespace and invisible characters are dropped first, so
+    /// they can't push the visible text out of the stored start.
     private static func shortened(_ text: String) -> String {
-        String(text.prefix(storedTextLength))
+        Preview.visiblePrefix(text, maxLength: storedTextLength)
     }
 
     private func trim() {

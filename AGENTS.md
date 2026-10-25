@@ -87,9 +87,9 @@ The app target is not unit tested.
   `ignore_concealed` is on, and so are apps in `ignored_apps`, matched
   case-insensitively by `org.nspasteboard.source` or the frontmost app's
   bundle id. On `NSWorkspace.didActivateApplicationNotification` the
-  watcher polls at once and attributes the copy to the app that was
-  frontmost *before* the switch, so copy-then-⌘Tab in an ignored app is
-  still skipped.
+  watcher polls at once. While a switch is in flight the copy may come
+  from either app, so it is skipped if the app before *or* after the
+  switch is ignored (copy-then-⌘Tab and ⌘Tab-then-copy both hold).
 - **Dedup** is by SHA-256 of the plain text (text) or PNG data (images). A
   repeated copy replaces the old entry and moves to the top.
 - **Persistence.** `~/Library/Application Support/CopyBar/index.json`
@@ -99,7 +99,7 @@ The app target is not unit tested.
   bump that number whenever a change makes saved history unreadable.
   Each item's data is in `items/<uuid>/<n>.bin`, where `n` indexes
   `types`. Data is read from disk
-  only when an item is picked. `ClipItem.text` holds only the first 1000
+  only when an item is picked. `ClipItem.text` holds only the first 1000 visible
   characters (menu title and tooltip); ⇧-picking reads the full text from
   the saved `public.utf8-plain-text` data (`HistoryStore.fullText(of:)`).
   Orphan folders are deleted on load.

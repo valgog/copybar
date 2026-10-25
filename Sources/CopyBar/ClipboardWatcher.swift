@@ -70,20 +70,21 @@ final class ClipboardWatcher {
 
     private func pollOnTimer() {
         let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        // Prefer the app seen at the last switch: if frontmostApplication
-        // already changed but the activation notification is still queued,
-        // a pending copy was made in the previous app.
-        poll(fallbackSource: lastFrontmostBundleID ?? frontmost)
+        // If frontmostApplication changed but the activation notification is
+        // still queued, the copy may be from either app.
+        poll(fallbackSources: [lastFrontmostBundleID, frontmost])
         lastFrontmostBundleID = frontmost
     }
 
     /// Polls right away on an app switch, so a copy followed by a quick ⌘Tab
     /// is attributed to the app it was made in (and `ignored_apps` holds).
+    /// The copy may also come from the newly active app if it copied before
+    /// this notification was delivered.
     private func appDidActivate(_ notification: Notification) {
-        poll(fallbackSource: lastFrontmostBundleID)
         let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-        lastFrontmostBundleID = app?.bundleIdentifier
-            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let activated = app?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        poll(fallbackSources: [lastFrontmostBundleID, activated])
+        lastFrontmostBundleID = activated
     }
 
     /// Call after CopyBar writes to the pasteboard itself.
@@ -91,9 +92,10 @@ final class ClipboardWatcher {
         lastChangeCount = pasteboard.changeCount
     }
 
-    /// `fallbackSource` is the bundle id of the app the copy is attributed
-    /// to when the copying app doesn't set `org.nspasteboard.source`.
-    private func poll(fallbackSource: String?) {
+    /// `fallbackSources` are the bundle ids of the apps the copy may come
+    /// from when the copying app doesn't set `org.nspasteboard.source`. The
+    /// copy is skipped if any of them is ignored.
+    private func poll(fallbackSources: [String?]) {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }
         lastChangeCount = changeCount
@@ -102,20 +104,21 @@ final class ClipboardWatcher {
         if settings.ignoreConcealed, types.contains(where: { Self.concealedTypes.contains($0.rawValue) }) {
             return
         }
-        let source = pasteboard.string(forType: NSPasteboard.PasteboardType("org.nspasteboard.source"))
-            ?? fallbackSource
-        if let source, settings.isIgnoredApp(source) { return }
+        let sources = pasteboard.string(forType: NSPasteboard.PasteboardType("org.nspasteboard.source"))
+            .map { [$0] } ?? fallbackSources.compactMap { $0 }
+        if sources.contains(where: settings.isIgnoredApp) { return }
 
         // Files copied in Finder are not supported.
         if types.contains(.fileURL) { return }
 
-        if let text = pasteboard.string(forType: .string),
-           !Preview.isBlank(text) {
-            let plain = Data(text.utf8)
-            guard plain.count <= Self.maxDataSize else {
-                log.warning("Skipped a copy of \(plain.count, privacy: .public) bytes of text; the limit is \(Self.maxDataSize, privacy: .public)")
+        if let text = pasteboard.string(forType: .string) {
+            // Check the size first: it's cheap, isBlank may scan the whole text.
+            guard text.utf8.count <= Self.maxDataSize else {
+                log.warning("Skipped a copy of \(text.utf8.count, privacy: .public) bytes of text; the limit is \(Self.maxDataSize, privacy: .public)")
                 return
             }
+            guard !Preview.isBlank(text) else { return }
+            let plain = Data(text.utf8)
             var representations: [(String, Data)] = [(NSPasteboard.PasteboardType.string.rawValue, plain)]
             for type in Self.textTypes where types.contains(type) {
                 // Formatting that is too big is dropped; the plain text is kept.
