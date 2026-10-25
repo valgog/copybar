@@ -17,6 +17,13 @@ HIDE_XCTEST_WARNING := sed -e '/could not determine XCTest paths/d' -e "/unable 
 
 INSTALLED  := $(PREFIX)/$(APP).app/Contents/MacOS/$(APP)
 
+# An empty PREFIX would make install/uninstall work on /CopyBar.app.
+ifneq ($(filter install uninstall,$(MAKECMDGOALS)),)
+ifeq ($(strip $(PREFIX)),)
+$(error PREFIX is empty; set it to the folder for $(APP).app, e.g. PREFIX=/Applications)
+endif
+endif
+
 # Lets the installed copy remove its own login item. Older builds don't know
 # the flag (they would just start), so only call it if the binary has it.
 define unregister_login_item
@@ -32,15 +39,15 @@ all: app
 # Builds each architecture separately and merges them with lipo. This works
 # with just the Xcode Command Line Tools (`xcode-select --install`).
 app:
-	@set -eo pipefail; bins=""; \
+	@set -eo pipefail; bins=(); \
 	for arch in $(ARCHS); do \
-		triple=$$arch-apple-macosx$(MIN_MACOS); \
-		swift build -c release --triple $$triple 2>&1 | $(HIDE_XCTEST_WARNING); \
-		bins="$$bins $$(swift build -c release --triple $$triple --show-bin-path 2>/dev/null)/$(APP)"; \
+		triple="$$arch-apple-macosx$(MIN_MACOS)"; \
+		swift build -c release --triple "$$triple" 2>&1 | $(HIDE_XCTEST_WARNING); \
+		bins+=("$$(swift build -c release --triple "$$triple" --show-bin-path 2>/dev/null)/$(APP)"); \
 	done; \
 	rm -rf "$(APP_BUNDLE)"; \
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"; \
-	lipo -create $$bins -output "$(APP_BUNDLE)/Contents/MacOS/$(APP)"; \
+	lipo -create "$${bins[@]}" -output "$(APP_BUNDLE)/Contents/MacOS/$(APP)"; \
 	cp Support/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"; \
 	codesign --force --options runtime --sign "$(SIGN_IDENTITY)" "$(APP_BUNDLE)"; \
 	echo "Built $(APP_BUNDLE) ($$(lipo -archs "$(APP_BUNDLE)/Contents/MacOS/$(APP)"))"

@@ -59,6 +59,11 @@ The app target is not unit tested.
   Command Line Tools installs. The Makefile filters it with
   `HIDE_XCTEST_WARNING`; the recipe uses `bash` with `pipefail` so real
   failures still stop the build. Keep that when editing recipes.
+- Recipes must work when the repo path contains spaces: quote paths, and
+  keep lists of paths in bash arrays (like `bins` in `app`), not in
+  space-separated strings.
+- `make install`/`uninstall` stop with an error if `PREFIX` is empty, so
+  they never touch `/CopyBar.app`.
 - CI also checks that the binary contains both architectures.
 
 ## Behavior and macOS quirks to preserve
