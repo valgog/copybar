@@ -96,9 +96,12 @@ The app target is not unit tested.
 - **Hotkey menu placement.** If Accessibility access is granted and the
   focused element reports a text cursor, the menu opens just below it
   (`TextCaret.rect()`). AX coordinates have a top-left origin on the main
-  screen and are flipped to Cocoa coordinates. Otherwise the menu opens
-  under the status item via `statusItem.button?.performClick(nil)`. The
-  Accessibility prompt is shown at most once per launch.
+  screen and are flipped to Cocoa coordinates. A rect with a NaN,
+  infinite or negative component is ignored, and so is one whose menu
+  anchor point (just below its bottom-left corner) is on no screen.
+  Otherwise the menu opens under the status item via
+  `statusItem.button?.performClick(nil)`. The Accessibility prompt is
+  shown at most once per launch.
 - **The hotkey uses Carbon `RegisterEventHotKey`.** It needs no
   permission. Don't switch it to an `NSEvent` global monitor, which needs
   Accessibility and can't swallow the key.
