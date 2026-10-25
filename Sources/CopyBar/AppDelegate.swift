@@ -94,6 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let width = item.pixelWidth, let height = item.pixelHeight {
                     menuItem.toolTip = "Image, \(width) × \(height)"
                 }
+            case .rich:
+                let label = item.label ?? "Copied content"
+                menuItem.title = Preview.line(item.text ?? label, maxLength: settings.textLength)
+                // Marks entries that paste as more than text (a slide, a shape…).
+                menuItem.image = NSImage(systemSymbolName: item.symbolName ?? "square.on.square",
+                                         accessibilityDescription: label)
+                    ?? NSImage(systemSymbolName: "square.on.square", accessibilityDescription: label)
+                menuItem.toolTip = [label, item.text].compactMap { $0 }.joined(separator: "\n\n")
             }
             // Keys 1-9 pick the first nine entries while the menu is open.
             if index < 9 {
@@ -127,7 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch item.kind {
         case .text where plainOnly:
             pasteboard.setString(store.fullText(of: item) ?? "", forType: .string)
-        case .text:
+        case .text, .rich:
+            // A rich item has no plain text of its own, so ⇧ makes no difference.
             for (type, data) in store.representations(of: item) {
                 pasteboard.setData(data, forType: NSPasteboard.PasteboardType(type))
             }

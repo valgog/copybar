@@ -64,6 +64,110 @@ public enum Preview {
         return result
     }
 
+    /// The visible text of an HTML fragment, collapsed to single spaces and
+    /// at most `maxLength` characters: tags and comments are dropped, and so
+    /// is the content of `script`, `style`, `title` and `template`. Block
+    /// elements and `<br>` become spaces. Only the common named entities
+    /// and numeric ones are decoded. Good enough for a menu title, not a
+    /// full HTML parser. Stops once it has `maxLength` characters.
+    public static func htmlText(_ html: String, maxLength: Int) -> String {
+        var result = ""
+        var count = 0
+        var pendingSpace = false
+        func append(_ character: Character) {
+            if character.isWhitespace {
+                pendingSpace = !result.isEmpty
+                return
+            }
+            if pendingSpace {
+                result.append(" ")
+                count += 1
+                pendingSpace = false
+            }
+            result.append(character)
+            count += 1
+        }
+
+        let end = html.endIndex
+        var index = html.startIndex
+        while index < end, count < maxLength {
+            let character = html[index]
+            if character == "<" {
+                if html[index...].hasPrefix("<!--") {
+                    guard let close = html.range(of: "-->", range: index..<end) else { break }
+                    index = close.upperBound
+                    continue
+                }
+                guard let close = html[index...].firstIndex(of: ">") else { break }
+                let tag = html[html.index(after: index)..<close]
+                index = html.index(after: close)
+                let name = tagName(tag)
+                if hiddenElements.contains(name), !tag.hasSuffix("/") {
+                    // Skip to the matching end tag; the content isn't markup.
+                    guard let endTag = html.range(of: "</" + name, options: .caseInsensitive, range: index..<end),
+                          let endClose = html[endTag.upperBound...].firstIndex(of: ">") else { break }
+                    index = html.index(after: endClose)
+                } else if blockElements.contains(name.hasPrefix("/") ? String(name.dropFirst()) : name) {
+                    append(" ")
+                }
+                continue
+            }
+            if character == "&", let (decoded, next) = entity(in: html, at: index) {
+                append(decoded)
+                index = next
+                continue
+            }
+            append(character)
+            index = html.index(after: index)
+        }
+        return sanitized(result)
+    }
+
+    private static let hiddenElements: Set<String> = ["script", "style", "title", "template"]
+    private static let blockElements: Set<String> = [
+        "address", "article", "aside", "blockquote", "br", "dd", "div", "dl", "dt", "figcaption",
+        "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main",
+        "nav", "ol", "p", "pre", "section", "table", "td", "th", "tr", "ul",
+    ]
+    private static let namedEntities: [String: Character] = [
+        "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ",
+    ]
+
+    /// Lowercased name of the tag between `<` and `>`, with a leading `/`
+    /// for an end tag.
+    private static func tagName(_ tag: Substring) -> String {
+        var name = ""
+        for character in tag {
+            if character == "/", name.isEmpty {
+                name.append(character)
+            } else if character.isLetter || character.isNumber {
+                name.append(character)
+            } else {
+                break
+            }
+        }
+        return name.lowercased()
+    }
+
+    /// The character for the entity starting with `&` at `index`, and the
+    /// index after its `;`.
+    private static func entity(in html: String, at index: String.Index) -> (Character, String.Index)? {
+        let start = html.index(after: index)
+        guard let semicolon = html[start...].prefix(10).firstIndex(of: ";") else { return nil }
+        let body = html[start..<semicolon]
+        let next = html.index(after: semicolon)
+        if body.hasPrefix("#") {
+            let digits = body.dropFirst()
+            let value = digits.first == "x" || digits.first == "X"
+                ? UInt32(digits.dropFirst(), radix: 16)
+                : UInt32(digits, radix: 10)
+            guard let value, let scalar = Unicode.Scalar(value) else { return nil }
+            return (Character(scalar), next)
+        }
+        guard let character = namedEntities[String(body)] else { return nil }
+        return (character, next)
+    }
+
     /// Whether `text` has nothing visible: only whitespace and the
     /// invisible characters that `sanitized` removes. Such copies aren't
     /// worth saving.
