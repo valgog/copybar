@@ -140,8 +140,10 @@ final class ClipboardWatcher {
                       representations: [(NSPasteboard.PasteboardType.png.rawValue, image.png)],
                       pixelWidth: image.width, pixelHeight: image.height)
         } else if let rich = richCopy(types: types) {
-            let title = rich.text.isEmpty ? Self.appName(of: sources.first) : rich.text
-            store.add(kind: .rich, text: title, digest: rich.digest, representations: rich.representations)
+            let google = Self.googleDescription(of: rich.representations)
+            let text = [google?.text, rich.text].compactMap { $0 }.first { !Preview.isBlank($0) }
+            store.add(kind: .rich, text: text, digest: rich.digest, representations: rich.representations,
+                      label: google?.label ?? Self.appName(of: sources.first), symbolName: google?.symbolName)
         }
     }
 
@@ -194,8 +196,18 @@ final class ClipboardWatcher {
         return !name.hasPrefix("dyn.") && !name.contains(" ") && name.contains(".")
     }
 
-    /// Menu title for a rich copy with no text: the name of the app it
-    /// came from.
+    /// What a copy made in Google Docs, Sheets, Slides or Drawings is, read
+    /// from Chrome's web custom data and source URL.
+    private static func googleDescription(of representations: [(String, Data)]) -> GoogleClip.Description? {
+        guard let customData = representations.first(where: { $0.0 == chromiumCustomData.rawValue })?.1,
+              let entries = WebCustomData.entries(customData) else { return nil }
+        let sourceURL = representations.first { $0.0 == "org.chromium.source-url" }
+            .map { String(decoding: $0.1, as: UTF8.self) }
+        return GoogleClip.describe(entries: entries, sourceURL: sourceURL)
+    }
+
+    /// Label of a rich copy that isn't from a Google editor: the name of
+    /// the app it came from.
     private static func appName(of bundleID: String?) -> String {
         let name = bundleID.flatMap { id in
             NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.localizedName

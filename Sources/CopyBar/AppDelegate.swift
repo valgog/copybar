@@ -95,11 +95,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     menuItem.toolTip = "Image, \(width) × \(height)"
                 }
             case .rich:
-                let text = item.text ?? ""
-                menuItem.title = Preview.line(text, maxLength: settings.textLength)
+                let label = item.label ?? "Copied content"
+                menuItem.title = Preview.line(item.text ?? label, maxLength: settings.textLength)
                 // Marks entries that paste as more than text (a slide, a shape…).
-                menuItem.image = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: "Rich content")
-                menuItem.toolTip = text + "\n\nPastes with all its original formats"
+                menuItem.image = NSImage(systemSymbolName: item.symbolName ?? "square.on.square",
+                                         accessibilityDescription: label)
+                    ?? NSImage(systemSymbolName: "square.on.square", accessibilityDescription: label)
+                menuItem.toolTip = [label, item.text].compactMap { $0 }.joined(separator: "\n\n")
             }
             // Keys 1-9 pick the first nine entries while the menu is open.
             if index < 9 {

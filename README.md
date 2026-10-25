@@ -19,8 +19,10 @@ you paste it with ⌘V as usual.
 - **Images** are shown as thumbnails (50×50 by default).
 - **Other content**, such as a slide or a shape copied in Google Slides,
   is kept with all its formats, so pasting it puts back the slide, not just
-  its text. These entries are marked with a ⧉ icon and titled with their
-  text, or with the app they were copied in.
+  its text. These entries have an icon and are titled with their text, or
+  with what they are. Copies from Google Docs, Sheets, Slides and Drawings
+  get their editor's icon and a label such as *Google Slides slide*, and a
+  slide is titled with the text on it.
 - Copying something that is already in the history moves it to the top.
 - Passwords copied from password managers (anything marked *concealed*, see
   [nspasteboard.org](http://nspasteboard.org)) are never saved.

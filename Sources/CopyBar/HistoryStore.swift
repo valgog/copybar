@@ -26,9 +26,13 @@ struct ClipItem: Codable {
     /// `HistoryStore.storedTextLength` characters: enough for the menu title
     /// and tooltip. The full text is in the item's saved
     /// `public.utf8-plain-text` data (see `HistoryStore.fullText(of:)`).
-    /// For a rich item, the visible text of its HTML, or the name of the
-    /// app it was copied in.
+    /// For a rich item, the text found in it (its HTML's visible text, or
+    /// a Google Slides slide's text), if any.
     let text: String?
+    /// What a rich item is, e.g. "Google Slides slide" or "Copied in Safari".
+    let label: String?
+    /// SF Symbol shown next to a rich item.
+    let symbolName: String?
     /// Used to spot repeated copies.
     let digest: String
     /// Pasteboard types saved for this item, in the order they were copied.
@@ -82,9 +86,10 @@ final class HistoryStore {
     /// Adds a new entry at the top. A repeated copy replaces the older entry,
     /// but only once the new one is saved, so a failed write loses nothing.
     func add(kind: ClipItem.Kind, text: String?, digest: String, representations: [(String, Data)],
+             label: String? = nil, symbolName: String? = nil,
              pixelWidth: Int? = nil, pixelHeight: Int? = nil) {
         let item = ClipItem(id: UUID(), date: Date(), kind: kind, text: text.map(Self.shortened),
-                            digest: digest,
+                            label: label, symbolName: symbolName, digest: digest,
                             types: representations.map { $0.0 }, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
         let itemDir = folder(for: item.id)
         do {

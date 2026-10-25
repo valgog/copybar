@@ -81,8 +81,14 @@ The app target is not unit tested.
   A copy with no visible plain text and no image (a Google Slides slide
   is HTML plus web custom data) becomes a `.rich` item: every UTI-named
   type is saved as is (each ≤ 32 MB, 64 MB in total; `dyn.` and old-style
-  alias names are skipped), titled by `Preview.htmlText` of its HTML or
-  by the source app's name. ⇧-clicking a menu entry
+  alias names are skipped). Its `text` is a Google Slides slide's text
+  or `Preview.htmlText` of its HTML; its `label` and `symbolName` come
+  from `GoogleClip` (Google editor copies: Chrome's web custom data,
+  parsed by `WebCustomData`, plus `org.chromium.source-url`) or the
+  source app's name. A slide copy's HTML is empty; the slide is the
+  `application/x-vnd.google-docs-drawings-page+wrapped` entry, whose
+  `data` JSON holds `unresolvedCommands`, where `[15, id, _, i, text]`
+  inserts text. ⇧-clicking a menu entry
   writes plain text only. Images: stored as PNG; picking one writes PNG
   and TIFF. File URLs (Finder copies) are skipped on purpose.
   Representations over 32 MB are not saved (a copy whose plain text or
