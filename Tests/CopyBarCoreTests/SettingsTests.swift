@@ -45,6 +45,14 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(warnings.count, 5)
     }
 
+    func testIgnoredAppsMatchCaseInsensitively() {
+        let settings = Settings.parse("ignored_apps = Com.Bitwarden.Desktop, com.apple.KeychainAccess").settings
+        XCTAssertEqual(settings.ignoredApps, ["com.bitwarden.desktop", "com.apple.keychainaccess"])
+        XCTAssertTrue(settings.isIgnoredApp("com.bitwarden.desktop"))
+        XCTAssertTrue(settings.isIgnoredApp("COM.APPLE.KEYCHAINACCESS"))
+        XCTAssertFalse(settings.isIgnoredApp("com.apple.TextEdit"))
+    }
+
     func testHotkeyCanBeTurnedOff() {
         XCTAssertNil(Settings.parse("hotkey = none").settings.hotkey)
         XCTAssertNil(Settings.parse("hotkey =").settings.hotkey)

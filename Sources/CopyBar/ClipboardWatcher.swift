@@ -1,6 +1,7 @@
 import AppKit
 import CopyBarCore
 import CryptoKit
+import ImageIO
 
 /// Polls the general pasteboard (macOS has no change notification) and
 /// hands new text and image copies to the history store.
@@ -9,6 +10,11 @@ final class ClipboardWatcher {
     private let store: HistoryStore
     private var lastChangeCount: Int
     private var timer: Timer?
+    private var activationObserver: NSObjectProtocol?
+    /// Bundle id of the app that was frontmost at the last poll or app
+    /// switch. A copy found right after a switch belongs to this app, not
+    /// to the one that just became active.
+    private var lastFrontmostBundleID: String?
     var settings: Settings
 
     /// Markers that password managers and similar apps put on secret or
@@ -24,6 +30,11 @@ final class ClipboardWatcher {
     /// Formats kept for text, so ⌘V can paste with formatting.
     private static let textTypes: [NSPasteboard.PasteboardType] = [.rtf, .rtfd, .html]
 
+    /// Largest single pasteboard representation that is saved, in bytes.
+    private static let maxDataSize = 32 * 1024 * 1024
+    /// Largest image that is decoded, in pixels (100 megapixels).
+    private static let maxImagePixels = 100_000_000
+
     init(store: HistoryStore, settings: Settings) {
         self.store = store
         self.settings = settings
@@ -33,11 +44,47 @@ final class ClipboardWatcher {
     func start() {
         timer?.invalidate()
         let timer = Timer(timeInterval: settings.pollInterval, repeats: true) { [weak self] _ in
-            self?.poll()
+            self?.pollOnTimer()
         }
         timer.tolerance = settings.pollInterval / 5
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+
+        // start() runs again when poll_interval changes; observe only once.
+        if activationObserver == nil {
+            lastFrontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] notification in
+                self?.appDidActivate(notification)
+            }
+        }
+    }
+
+    deinit {
+        timer?.invalidate()
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+        }
+    }
+
+    private func pollOnTimer() {
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        // If frontmostApplication changed but the activation notification is
+        // still queued, the copy may be from either app.
+        poll(fallbackSources: [lastFrontmostBundleID, frontmost])
+        lastFrontmostBundleID = frontmost
+    }
+
+    /// Polls right away on an app switch, so a copy followed by a quick ⌘Tab
+    /// is attributed to the app it was made in (and `ignored_apps` holds).
+    /// The copy may also come from the newly active app if it copied before
+    /// this notification was delivered.
+    private func appDidActivate(_ notification: Notification) {
+        let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        let activated = app?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        poll(fallbackSources: [lastFrontmostBundleID, activated])
+        lastFrontmostBundleID = activated
     }
 
     /// Call after CopyBar writes to the pasteboard itself.
@@ -45,7 +92,10 @@ final class ClipboardWatcher {
         lastChangeCount = pasteboard.changeCount
     }
 
-    private func poll() {
+    /// `fallbackSources` are the bundle ids of the apps the copy may come
+    /// from when the copying app doesn't set `org.nspasteboard.source`. The
+    /// copy is skipped if any of them is ignored.
+    private func poll(fallbackSources: [String?]) {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }
         lastChangeCount = changeCount
@@ -54,22 +104,29 @@ final class ClipboardWatcher {
         if settings.ignoreConcealed, types.contains(where: { Self.concealedTypes.contains($0.rawValue) }) {
             return
         }
-        let source = pasteboard.string(forType: NSPasteboard.PasteboardType("org.nspasteboard.source"))
-            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        if let source, settings.ignoredApps.contains(source) { return }
+        let sources = pasteboard.string(forType: NSPasteboard.PasteboardType("org.nspasteboard.source"))
+            .map { [$0] } ?? fallbackSources.compactMap { $0 }
+        if sources.contains(where: settings.isIgnoredApp) { return }
 
         // Files copied in Finder are not supported.
         if types.contains(.fileURL) { return }
 
-        if let text = pasteboard.string(forType: .string),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            var representations: [(String, Data)] = [(NSPasteboard.PasteboardType.string.rawValue, Data(text.utf8))]
+        if let text = pasteboard.string(forType: .string) {
+            // Check the size first: it's cheap, isBlank may scan the whole text.
+            guard text.utf8.count <= Self.maxDataSize else {
+                log.warning("Skipped a copy of \(text.utf8.count, privacy: .public) bytes of text; the limit is \(Self.maxDataSize, privacy: .public)")
+                return
+            }
+            guard !Preview.isBlank(text) else { return }
+            let plain = Data(text.utf8)
+            var representations: [(String, Data)] = [(NSPasteboard.PasteboardType.string.rawValue, plain)]
             for type in Self.textTypes where types.contains(type) {
-                if let data = pasteboard.data(forType: type) {
+                // Formatting that is too big is dropped; the plain text is kept.
+                if let data = pasteboard.data(forType: type), data.count <= Self.maxDataSize {
                     representations.append((type.rawValue, data))
                 }
             }
-            store.add(kind: .text, text: text, digest: digest(Data(text.utf8)), representations: representations)
+            store.add(kind: .text, text: text, digest: digest(plain), representations: representations)
         } else if let image = imagePNG(types: types) {
             store.add(kind: .image, text: nil, digest: digest(image.png),
                       representations: [(NSPasteboard.PasteboardType.png.rawValue, image.png)],
@@ -79,18 +136,48 @@ final class ClipboardWatcher {
 
     /// Image on the pasteboard as PNG data, plus its pixel size.
     private func imagePNG(types: [NSPasteboard.PasteboardType]) -> (png: Data, width: Int, height: Int)? {
-        let png: Data
-        if types.contains(.png), let data = pasteboard.data(forType: .png) {
-            png = data
-        } else if types.contains(.tiff), let tiff = pasteboard.data(forType: .tiff),
-                  let rep = NSBitmapImageRep(data: tiff),
-                  let data = rep.representation(using: .png, properties: [:]) {
-            png = data
+        let data: Data
+        let isPNG: Bool
+        if types.contains(.png), let png = pasteboard.data(forType: .png) {
+            data = png
+            isPNG = true
+        } else if types.contains(.tiff), let tiff = pasteboard.data(forType: .tiff) {
+            data = tiff
+            isPNG = false
         } else {
             return nil
         }
-        guard let rep = NSBitmapImageRep(data: png) else { return nil }
-        return (png: png, width: rep.pixelsWide, height: rep.pixelsHigh)
+        guard data.count <= Self.maxDataSize else {
+            log.warning("Skipped an image of \(data.count, privacy: .public) bytes; the limit is \(Self.maxDataSize, privacy: .public)")
+            return nil
+        }
+        // Read the size from the header before decoding anything: a small
+        // file can claim a huge canvas and take gigabytes to decode.
+        guard let size = pixelSize(of: data) else { return nil }
+        guard Double(size.width) * Double(size.height) <= Double(Self.maxImagePixels) else {
+            log.warning("Skipped an image of \(size.width, privacy: .public) × \(size.height, privacy: .public) pixels; the limit is 100 megapixels")
+            return nil
+        }
+        if isPNG {
+            return (png: data, width: size.width, height: size.height)
+        }
+        guard let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) else { return nil }
+        guard png.count <= Self.maxDataSize else {
+            log.warning("Skipped an image of \(png.count, privacy: .public) bytes as PNG; the limit is \(Self.maxDataSize, privacy: .public)")
+            return nil
+        }
+        return (png: png, width: size.width, height: size.height)
+    }
+
+    /// Pixel size of the first image in `data`, read from its header
+    /// without decoding the pixels.
+    private func pixelSize(of data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        return (width: width, height: height)
     }
 
     private func digest(_ data: Data) -> String {

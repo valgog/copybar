@@ -87,7 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .text:
                 let text = item.text ?? ""
                 menuItem.title = Preview.line(text, maxLength: settings.textLength)
-                menuItem.toolTip = String(text.prefix(1000))
+                // Already sanitized and at most 1000 characters (HistoryStore.shortened).
+                menuItem.toolTip = text
             case .image:
                 menuItem.image = store.thumbnail(of: item, size: settings.imageSize)
                 if let width = item.pixelWidth, let height = item.pixelHeight {
@@ -125,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         switch item.kind {
         case .text where plainOnly:
-            pasteboard.setString(item.text ?? "", forType: .string)
+            pasteboard.setString(store.fullText(of: item) ?? "", forType: .string)
         case .text:
             for (type, data) in store.representations(of: item) {
                 pasteboard.setData(data, forType: NSPasteboard.PasteboardType(type))

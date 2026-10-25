@@ -9,7 +9,9 @@ at the text cursor; otherwise it opens under the menu bar icon. The picked entry
 you paste it with ⌘V as usual.
 
 - **Text** is shown as one trimmed line (30 characters by default). Markdown
-  is treated as text.
+  is treated as text. Invisible characters (zero-width spaces, text
+  direction overrides, control codes) are left out of the menu, and copies
+  that contain nothing else are not saved.
 - **Rich text** (from web pages, Pages, Word…) keeps its formatting. Pasting
   with ⌘V keeps the formatting; the app's own plain-text paste (⇧⌘V in Google
   Docs, Chrome and Slack, ⌥⇧⌘V in most Mac apps) still works. Hold **⇧** while
@@ -19,7 +21,8 @@ you paste it with ⌘V as usual.
 - Passwords copied from password managers (anything marked *concealed*, see
   [nspasteboard.org](http://nspasteboard.org)) are never saved.
 - History is saved in `~/Library/Application Support/CopyBar` and survives
-  restarts. Files copied in Finder are ignored.
+  restarts. Files copied in Finder are ignored, and so are very large
+  copies (over 32 MB, or images over 100 megapixels).
 - While the menu is open, keys **1**–**9** pick the first nine entries.
 
 Requires macOS 13 or later. Runs natively on Apple Silicon and Intel.
@@ -60,7 +63,7 @@ image_size = 50         # thumbnail size in points (16-512)
 hotkey = cmd+alt+v      # modifiers: cmd, alt, ctrl, shift; `none` to turn off
 launch_at_login = true
 ignore_concealed = true # skip copies that password managers mark as secret
-ignored_apps =          # comma-separated bundle IDs never to record
+ignored_apps =          # comma-separated bundle IDs never to record (any case)
 poll_interval = 0.5     # seconds between clipboard checks (0.1-10)
 ```
 

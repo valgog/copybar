@@ -29,7 +29,8 @@ enum TextCaret {
         // edge of the character before the cursor instead.
         if range.length == 0, range.location > 0,
            let previous = bounds(focused, CFRange(location: range.location - 1, length: 1)) {
-            return NSRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
+            let caret = NSRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
+            return anchorIsOnScreen(caret) ? caret : nil
         }
         return nil
     }
@@ -43,7 +44,13 @@ enum TextCaret {
             let result, CFGetTypeID(result) == AXValueGetTypeID() else { return nil }
 
         var rect = CGRect.zero
-        guard AXValueGetValue(result as! AXValue, .cgRect, &rect), rect.height > 0,
+        // Apps sometimes report garbage; NaN or infinity would also slip
+        // through the comparisons below. Check `size`, because `width` and
+        // `height` are always non-negative.
+        guard AXValueGetValue(result as! AXValue, .cgRect, &rect),
+              rect.origin.x.isFinite, rect.origin.y.isFinite,
+              rect.size.width.isFinite, rect.size.height.isFinite,
+              rect.size.width >= 0, rect.size.height > 0,
               rect.origin != .zero else { return nil }
 
         // Accessibility measures from the top-left of the main screen,
@@ -51,10 +58,15 @@ enum TextCaret {
         guard let mainScreen = NSScreen.screens.first else { return nil }
         let flipped = NSRect(x: rect.minX, y: mainScreen.frame.maxY - rect.maxY,
                              width: rect.width, height: rect.height)
-        guard NSScreen.screens.contains(where: { $0.frame.intersects(flipped.insetBy(dx: -1, dy: -1)) }) else {
-            return nil
-        }
-        return flipped
+        return anchorIsOnScreen(flipped) ? flipped : nil
+    }
+
+    /// Whether the point the menu opens at, just below the bottom-left of
+    /// the caret (as `AppDelegate` uses it), is on some screen, with 1 pt
+    /// of slack for edges.
+    private static func anchorIsOnScreen(_ caret: NSRect) -> Bool {
+        let anchor = NSPoint(x: caret.minX, y: caret.minY - 2)
+        return NSScreen.screens.contains { $0.frame.insetBy(dx: -1, dy: -1).contains(anchor) }
     }
 
     private static func element(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {

@@ -13,6 +13,13 @@ public struct Settings: Equatable {
 
     public init() {}
 
+    /// Whether copies from the app with this bundle id are never saved.
+    /// Bundle ids are matched case-insensitively.
+    public func isIgnoredApp(_ bundleID: String) -> Bool {
+        let id = bundleID.lowercased()
+        return ignoredApps.contains { $0.lowercased() == id }
+    }
+
     /// Parses the config file text. Unknown keys and bad values are reported
     /// as warnings and leave the default in place.
     public static func parse(_ text: String) -> (settings: Settings, warnings: [String]) {
@@ -78,7 +85,7 @@ public struct Settings: Equatable {
             case "ignored_apps":
                 settings.ignoredApps = value
                     .split(separator: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
                     .filter { !$0.isEmpty }
             default:
                 warnings.append("line \(lineNo): unknown key `\(key)`")

@@ -17,7 +17,7 @@ CryptoKit.
 Package.swift                 SwiftPM package, swift-tools 5.9, macOS 13
 Sources/CopyBarCore/          Pure Foundation, no AppKit; unit tested
   Settings.swift              key = value config parser + default file text
-  Preview.swift               one-line text preview trimming
+  Preview.swift               one-line preview, invisible-character stripping, blank check
   HotKeySpec.swift            "cmd+alt+v" → virtual key code + modifiers
 Sources/CopyBar/              The AppKit app
   main.swift                  --unregister-login-item flag, single instance, app start
@@ -59,7 +59,15 @@ The app target is not unit tested.
   Command Line Tools installs. The Makefile filters it with
   `HIDE_XCTEST_WARNING`; the recipe uses `bash` with `pipefail` so real
   failures still stop the build. Keep that when editing recipes.
+- Recipes must work when the repo path contains spaces: quote paths, and
+  keep lists of paths in bash arrays (like `bins` in `app`), not in
+  space-separated strings.
+- `make install`/`uninstall` stop with an error if `PREFIX` is empty, so
+  they never touch `/CopyBar.app`.
 - CI also checks that the binary contains both architectures.
+- The workflow runs with read-only `contents` permission and pins each
+  action to a full commit SHA with a `# vX.Y.Z` comment. Keep both when
+  adding or updating actions.
 
 ## Behavior and macOS quirks to preserve
 
@@ -70,17 +78,33 @@ The app target is not unit tested.
 - **What gets captured.** Text: the plain string plus `.rtf`, `.rtfd`,
   `.html` when present, so ⌘V keeps formatting. ⇧-clicking a menu entry
   writes plain text only. Images: stored as PNG; picking one writes PNG
-  and TIFF. File URLs (Finder copies) are skipped on purpose. Copies with
+  and TIFF. File URLs (Finder copies) are skipped on purpose.
+  Representations over 32 MB are not saved (a copy whose plain text or
+  image is that big is skipped), and images over 100 megapixels are
+  skipped; their size is read with `CGImageSourceCopyPropertiesAtIndex`
+  before anything is decoded. Copies with
   nspasteboard.org concealed/transient markers are skipped when
-  `ignore_concealed` is on, and so are apps in `ignored_apps`, matched by
-  `org.nspasteboard.source` or the frontmost app's bundle id.
+  `ignore_concealed` is on, and so are apps in `ignored_apps`, matched
+  case-insensitively by `org.nspasteboard.source` or the frontmost app's
+  bundle id. On `NSWorkspace.didActivateApplicationNotification` the
+  watcher polls at once. While a switch is in flight the copy may come
+  from either app, so it is skipped if the app before *or* after the
+  switch is ignored (copy-then-⌘Tab and ⌘Tab-then-copy both hold).
 - **Dedup** is by SHA-256 of the plain text (text) or PNG data (images). A
   repeated copy replaces the old entry and moves to the top.
-- **Persistence.** `~/Library/Application Support/CopyBar/index.json` is
-  an array of `ClipItem` (Codable). Each item's data is in
-  `items/<uuid>/<n>.bin`, where `n` indexes `types`. Data is read from disk
-  only when an item is picked. **Any new `ClipItem` field must be optional**
-  so existing history still decodes. Orphan folders are deleted on load.
+- **Persistence.** `~/Library/Application Support/CopyBar/index.json`
+  holds a format `version` and the `items`, an array of `ClipItem`
+  (Codable). If the index can't be decoded or its version isn't
+  `HistoryStore.formatVersion`, the whole history is deleted on start, so
+  bump that number whenever a change makes saved history unreadable.
+  Each item's data is in `items/<uuid>/<n>.bin`, where `n` indexes
+  `types`. Data is read from disk
+  only when an item is picked. `ClipItem.text` holds only the first 1000 visible
+  characters (menu title and tooltip); ⇧-picking reads the full text from
+  the saved `public.utf8-plain-text` data (`HistoryStore.fullText(of:)`).
+  Orphan folders are deleted on load.
+  The history can hold secrets: folders are created 0700 and files 0600,
+  and the `CopyBar` folder is chmodded to 0700 on every start.
 - **Never activate the app before showing the menu.** `NSApp.activate`
   completes asynchronously and closes a menu that just opened. The hotkey
   menu is shown with `menu.popUp(...)` without activation. That also
@@ -88,9 +112,12 @@ The app target is not unit tested.
 - **Hotkey menu placement.** If Accessibility access is granted and the
   focused element reports a text cursor, the menu opens just below it
   (`TextCaret.rect()`). AX coordinates have a top-left origin on the main
-  screen and are flipped to Cocoa coordinates. Otherwise the menu opens
-  under the status item via `statusItem.button?.performClick(nil)`. The
-  Accessibility prompt is shown at most once per launch.
+  screen and are flipped to Cocoa coordinates. A rect with a NaN,
+  infinite or negative component is ignored, and so is one whose menu
+  anchor point (just below its bottom-left corner) is on no screen.
+  Otherwise the menu opens under the status item via
+  `statusItem.button?.performClick(nil)`. The Accessibility prompt is
+  shown at most once per launch.
 - **The hotkey uses Carbon `RegisterEventHotKey`.** It needs no
   permission. Don't switch it to an `NSEvent` global monitor, which needs
   Accessibility and can't swallow the key.
@@ -108,18 +135,32 @@ The app target is not unit tested.
     it, because older builds would just launch.
   - `SIGN_IDENTITY="Some Cert"` signs with a stable certificate, which
     keeps the permissions across rebuilds.
-- **Single instance.** `main.swift` exits if another process with the same
-  bundle id is running. `make install` waits for the old process to quit
-  before starting the new one, so the new copy doesn't see it and exit.
-- `LoginItem` and the single-instance check do nothing without a bundle
+  - `make app` signs with the Hardened Runtime (`--options runtime`),
+    also for ad hoc builds. The app needs no entitlements; if a feature
+    ever needs one (e.g. Apple Events), add an entitlements file to the
+    `codesign` call.
+- **Single instance.** `main.swift` takes an exclusive, non-blocking
+  `flock` on `~/Library/Application Support/CopyBar/CopyBar.lock` and
+  exits if another process holds it. The file descriptor stays open for
+  the life of the process; the kernel releases the lock when it exits,
+  even after a crash. `--unregister-login-item` is handled before the
+  lock, so it works while CopyBar is running. `make install` waits for the
+  old process to quit before starting the new one, so the new copy gets
+  the lock.
+- `LoginItem` and the single-instance lock do nothing without a bundle
   id, which is the case for `swift run`.
 
 ## Settings
 
 The config file is `~/.config/copybar/config`, in `key = value` format.
 Lines starting with `#` or `;` are comments, and lists are comma-separated.
-It is created on first run from `Settings.defaultFileContents` and
+It is created on first run from `Settings.defaultFileContents` (folder
+0700 and file 0600 when CopyBar creates them) and
 reloaded when its modification date changes, checked every 2 s.
+A symlinked config (dotfiles repos) is read through the link, but only if
+the target is a regular file of at most 64 KB; otherwise CopyBar warns and
+uses the defaults. An existing symlink, even a dangling one, is never
+replaced or written through when creating the default file.
 `AppDelegate.applySettings()` applies changes live.
 
 To add a setting, update all of these together:
