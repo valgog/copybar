@@ -65,6 +65,9 @@ The app target is not unit tested.
 - `make install`/`uninstall` stop with an error if `PREFIX` is empty, so
   they never touch `/CopyBar.app`.
 - CI also checks that the binary contains both architectures.
+- The workflow runs with read-only `contents` permission and pins each
+  action to a full commit SHA with a `# vX.Y.Z` comment. Keep both when
+  adding or updating actions.
 
 ## Behavior and macOS quirks to preserve
 
