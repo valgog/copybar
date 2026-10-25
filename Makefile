@@ -42,7 +42,7 @@ app:
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"; \
 	lipo -create $$bins -output "$(APP_BUNDLE)/Contents/MacOS/$(APP)"; \
 	cp Support/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"; \
-	codesign --force --sign "$(SIGN_IDENTITY)" "$(APP_BUNDLE)"; \
+	codesign --force --options runtime --sign "$(SIGN_IDENTITY)" "$(APP_BUNDLE)"; \
 	echo "Built $(APP_BUNDLE) ($$(lipo -archs "$(APP_BUNDLE)/Contents/MacOS/$(APP)"))"
 
 install: app

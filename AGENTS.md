@@ -108,6 +108,10 @@ The app target is not unit tested.
     it, because older builds would just launch.
   - `SIGN_IDENTITY="Some Cert"` signs with a stable certificate, which
     keeps the permissions across rebuilds.
+  - `make app` signs with the Hardened Runtime (`--options runtime`),
+    also for ad hoc builds. The app needs no entitlements; if a feature
+    ever needs one (e.g. Apple Events), add an entitlements file to the
+    `codesign` call.
 - **Single instance.** `main.swift` exits if another process with the same
   bundle id is running. `make install` waits for the old process to quit
   before starting the new one, so the new copy doesn't see it and exit.
