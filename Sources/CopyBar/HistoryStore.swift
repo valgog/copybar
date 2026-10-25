@@ -1,4 +1,5 @@
 import AppKit
+import CopyBarCore
 import ImageIO
 
 /// The contents of `index.json`.
