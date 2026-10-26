@@ -43,7 +43,7 @@ The app target is not unit tested.
 
 | Command        | What it does                                                        |
 |----------------|---------------------------------------------------------------------|
-| `make app`     | Builds each arch with `--triple`, merges with `lipo`, signs → `.build/CopyBar.app` |
+| `make app`     | Builds each arch with `--triple` into `.build/<arch>`, merges with `lipo`, signs → `.build/CopyBar.app` |
 | `make install` | `make app`, then replaces `/Applications/CopyBar.app` and starts it  |
 | `make uninstall` | Removes the app; keeps history and settings                       |
 | `make test`    | `swift test` (needs full Xcode for XCTest)                          |
@@ -55,7 +55,10 @@ The app target is not unit tested.
   untested on a real Mac.
 - `make app` works with just the Command Line Tools. Building per arch
   and running `lipo` is deliberate: `swift build --arch arm64 --arch x86_64`
-  needs full Xcode.
+  needs full Xcode. Each arch builds in its own `--scratch-path`
+  (`.build/arm64`, `.build/x86_64`): with the Swift Build build system,
+  the default in newer toolchains, every triple shares
+  `.build/out/Products/Release`, and `lipo` then gets one binary twice.
 - SwiftPM prints a harmless "could not determine XCTest paths" warning on
   Command Line Tools installs. The Makefile filters it with
   `HIDE_XCTEST_WARNING`; the recipe uses `bash` with `pipefail` so real

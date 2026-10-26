@@ -45,12 +45,16 @@ all: app
 
 # Builds each architecture separately and merges them with lipo. This works
 # with just the Xcode Command Line Tools (`xcode-select --install`).
+# Each arch gets its own scratch path: the Swift Build build system (the
+# default in newer toolchains) writes every triple to the same
+# .build/out/Products/Release, so the second build would overwrite the first.
 app:
 	@set -eo pipefail; bins=(); \
 	for arch in $(ARCHS); do \
 		triple="$$arch-apple-macosx$(MIN_MACOS)"; \
-		swift build -c release --triple "$$triple" 2>&1 | $(HIDE_XCTEST_WARNING); \
-		bins+=("$$(swift build -c release --triple "$$triple" --show-bin-path 2>/dev/null)/$(APP)"); \
+		scratch="$(BUILD_DIR)/$$arch"; \
+		swift build -c release --triple "$$triple" --scratch-path "$$scratch" 2>&1 | $(HIDE_XCTEST_WARNING); \
+		bins+=("$$(swift build -c release --triple "$$triple" --scratch-path "$$scratch" --show-bin-path 2>/dev/null)/$(APP)"); \
 	done; \
 	rm -rf "$(APP_BUNDLE)"; \
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"; \
